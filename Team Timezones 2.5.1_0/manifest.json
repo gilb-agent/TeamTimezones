@@ -17,11 +17,9 @@
       "16": "icons/icon16.png",
       "48": "icons/icon48.png"
    },
-   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6z4zHx6Iwzm+E7aJ8cKMVKPW0xMZcxm9nAr5JPT1uUE7cErABReP4jMzVTtCNBjTDQ8km9Pj6yt1lOXnwMs/M0GdpogmiDfcdkGIKe48mS4Ad5uMPzP99KRXKQgfjutk7/ApIXe45tQLhiH8PA2h6YoRukUl0w/cDbRIS1EIxBRk4ztXwnt4veDikUZW0RTwHaq+HKEzwvwBT7eMBCSUj2c63sgL0dJYNLyRSJiLwc/1FUztGg+Jf9hXoX/rO3DCR0ZF1kq1j7NupwZpuTwY8dtVqMqkWiqK1AKo3sWuzGS/8pg61TYMRI6cmNW0xq3ApYMWyovIVN9qg5nvDGHQBQIDAQAB",
    "manifest_version": 3,
    "name": "Team Timezones",
    "options_page": "options.html",
    "permissions": [ "storage" ],
-   "update_url": "https://clients2.google.com/service/update2/crx",
    "version": "2.5.1"
 }
