@@ -1516,10 +1516,13 @@ document.addEventListener('DOMContentLoaded', () => {
       // Calculate offset from home base (use baseDate for offset calculation)
       const offsetStr = getOffsetFromHomeBase(baseDate, member.timezone);
       
-      // Get timezone abbreviation
+      // Team member names, if any were given. member.city is set from the
+      // same free-text field as member.name today, so falling back to it
+      // here would just repeat the name — only show it if it's ever
+      // actually different.
       const namesLine = member.members && member.members.length
         ? member.members.join(', ')
-        : member.city;
+        : (member.city && member.city !== member.name ? member.city : '');
       
       const statusClass = isWorkHours ? 'work-hours' : isNight ? 'night' : 'off-hours';
       const isFocused = focusedRowIndex === index;
