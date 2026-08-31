@@ -51,12 +51,15 @@ function autoSaveTeamMember(index) {
 // DOM elements
 const homeCityInput = document.getElementById('homeCity');
 const homeTimezoneSelect = document.getElementById('homeTimezone');
+const homeHoursStartSelect = document.getElementById('homeHoursStart');
+const homeHoursEndSelect = document.getElementById('homeHoursEnd');
 const saveHomeBtn = document.getElementById('saveHomeBtn');
 const newNameInput = document.getElementById('newName');
 const newMembersInput = document.getElementById('newMembers');
 const newTzSelect = document.getElementById('newTz');
 const addBtn = document.getElementById('addBtn');
 const teamList = document.getElementById('teamList');
+const calendarProviderSelect = document.getElementById('calendarProviderSelect');
 const toast = document.getElementById('toast');
 const toastMessage = document.getElementById('toastMessage');
 
@@ -70,7 +73,9 @@ let lastSavedIndex = null;
 function init() {
   populateTimezoneSelect(homeTimezoneSelect);
   populateTimezoneSelect(newTzSelect);
-  
+  if (homeHoursStartSelect) homeHoursStartSelect.innerHTML = buildHourOptions(CONSTANTS.WORK_HOURS_START);
+  if (homeHoursEndSelect) homeHoursEndSelect.innerHTML = buildHourOptions(CONSTANTS.WORK_HOURS_END);
+
   // Initialize dark mode
   let isDarkMode = null;
   
@@ -92,7 +97,7 @@ function init() {
   }
   
   // Load saved data with error handling
-  chrome.storage.sync.get(['team', 'homeBase', 'isDarkMode'], (result) => {
+  chrome.storage.sync.get(['team', 'homeBase', 'isDarkMode', 'calendarProvider'], (result) => {
     // Check for Chrome runtime errors
     if (chrome.runtime.lastError) {
       console.error('Storage error:', chrome.runtime.lastError);
@@ -142,6 +147,12 @@ function init() {
         homeBase = result.homeBase;
         homeCityInput.value = homeBase.city || '';
         homeTimezoneSelect.value = homeBase.timezone || '';
+        if (homeHoursStartSelect && typeof homeBase.workHoursStart === 'number') {
+          homeHoursStartSelect.value = homeBase.workHoursStart;
+        }
+        if (homeHoursEndSelect && typeof homeBase.workHoursEnd === 'number') {
+          homeHoursEndSelect.value = homeBase.workHoursEnd;
+        }
       } else {
         console.warn('Invalid home base timezone:', result.homeBase.timezone);
         homeBase = null;
@@ -177,6 +188,11 @@ function init() {
       isDarkMode = result.isDarkMode;
     }
     applyDarkMode();
+
+    // Load calendar provider preference (empty value = ask each time)
+    if (calendarProviderSelect) {
+      calendarProviderSelect.value = result.calendarProvider || '';
+    }
     
     // Listen for dark mode changes from popup
     chrome.storage.onChanged.addListener((changes) => {
@@ -196,6 +212,20 @@ function init() {
     });
   }
   
+  if (calendarProviderSelect) {
+    calendarProviderSelect.addEventListener('change', () => {
+      const value = calendarProviderSelect.value; // '', 'google', or 'outlook'
+      chrome.storage.sync.set({ calendarProvider: value || null }, () => {
+        if (chrome.runtime.lastError) {
+          console.error('Failed to save calendar provider:', chrome.runtime.lastError);
+          showToast('Failed to save. Please try again.');
+          return;
+        }
+        showToast('Saved');
+      });
+    });
+  }
+
   addBtn.addEventListener('click', addTeamMember);
   newNameInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') addTeamMember();
@@ -304,7 +334,15 @@ function saveHomeBase(showToastFeedback = true) {
     return;
   }
 
-  homeBase = { city: cityName, timezone };
+  const workHoursStart = homeHoursStartSelect ? parseInt(homeHoursStartSelect.value, 10) : CONSTANTS.WORK_HOURS_START;
+  const workHoursEnd = homeHoursEndSelect ? parseInt(homeHoursEndSelect.value, 10) : CONSTANTS.WORK_HOURS_END;
+
+  if (workHoursEnd <= workHoursStart) {
+    showToast('Business hours end must be after the start');
+    return;
+  }
+
+  homeBase = { city: cityName, timezone, workHoursStart, workHoursEnd };
 
   // Save to storage with error handling
   chrome.storage.sync.set({ homeBase }, () => {
@@ -463,7 +501,14 @@ function renderTeamList() {
         ${tz.label}
       </option>
     `).join('');
-    
+
+    const workHoursStart = typeof member.workHoursStart === 'number'
+      ? member.workHoursStart
+      : CONSTANTS.WORK_HOURS_START;
+    const workHoursEnd = typeof member.workHoursEnd === 'number'
+      ? member.workHoursEnd
+      : CONSTANTS.WORK_HOURS_END;
+
     return `
       <div class="team-item" data-index="${index}">
         <div class="drag-handle" draggable="true" data-index="${index}" aria-label="Drag to reorder">
@@ -493,6 +538,13 @@ function renderTeamList() {
           />
           <select class="team-tz-select" data-index="${index}">
             ${timezoneOptions}
+          </select>
+          <select class="team-hours-select team-hours-start-select" data-index="${index}" aria-label="Business hours start for ${escapeHtml(member.name)}" title="Business hours start">
+            ${buildHourOptions(workHoursStart)}
+          </select>
+          <span class="team-hours-sep" aria-hidden="true">&ndash;</span>
+          <select class="team-hours-select team-hours-end-select" data-index="${index}" aria-label="Business hours end for ${escapeHtml(member.name)}" title="Business hours end">
+            ${buildHourOptions(workHoursEnd)}
           </select>
         </div>
         <div class="team-item-actions">
@@ -673,15 +725,24 @@ function saveEditedTeamMember(orderedIndex, actualIndex, showToast = true) {
   const cityInput = teamList.querySelector(`.team-city-input[data-index="${domIndex}"]`);
   const membersInput = teamList.querySelector(`.team-members-input[data-index="${domIndex}"]`);
   const tzSelect = teamList.querySelector(`.team-tz-select[data-index="${domIndex}"]`);
+  const hoursStartSelect = teamList.querySelector(`.team-hours-start-select[data-index="${domIndex}"]`);
+  const hoursEndSelect = teamList.querySelector(`.team-hours-end-select[data-index="${domIndex}"]`);
   const saveBtn = teamList.querySelector(`.save-team-row[data-index="${domIndex}"]`);
-  
+
   if (!cityInput || !tzSelect || teamIndex === -1 || !team[teamIndex]) {
     return;
   }
-  
+
   const city = cityInput.value.trim();
   const timezone = tzSelect.value;
   const membersRaw = membersInput ? membersInput.value.trim() : '';
+  const workHoursStart = hoursStartSelect ? parseInt(hoursStartSelect.value, 10) : CONSTANTS.WORK_HOURS_START;
+  const workHoursEnd = hoursEndSelect ? parseInt(hoursEndSelect.value, 10) : CONSTANTS.WORK_HOURS_END;
+
+  if (workHoursEnd <= workHoursStart) {
+    showToast('Business hours end must be after the start');
+    return;
+  }
 
   // Validate inputs
   if (!city || !timezone) {
@@ -716,6 +777,8 @@ function saveEditedTeamMember(orderedIndex, actualIndex, showToast = true) {
   team[teamIndex].city = city;
   team[teamIndex].timezone = timezone;
   team[teamIndex].members = members;
+  team[teamIndex].workHoursStart = workHoursStart;
+  team[teamIndex].workHoursEnd = workHoursEnd;
 
   saveTeam();
   
@@ -780,6 +843,19 @@ function formatHour(hour) {
   if (hour < 12) return `${hour} AM`;
   if (hour === 12) return '12 PM';
   return `${hour - 12} PM`;
+}
+
+/**
+ * Build <option> markup for an hour-of-day select (0-23).
+ * @param {number} selectedHour
+ * @returns {string}
+ */
+function buildHourOptions(selectedHour) {
+  let options = '';
+  for (let h = 0; h < 24; h++) {
+    options += `<option value="${h}" ${h === selectedHour ? 'selected' : ''}>${formatHour(h)}</option>`;
+  }
+  return options;
 }
 
 // Star rating functionality

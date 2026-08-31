@@ -276,6 +276,95 @@ function formatHour(hour) {
   return `${hour - 12} PM`;
 }
 
+/**
+ * Resolve the effective work-hours window for a team member, falling back
+ * to the global default when the member has no override set.
+ * @param {Object} member - Team member object
+ * @returns {{start: number, end: number}}
+ */
+function getEffectiveWorkHours(member) {
+  const start = typeof member.workHoursStart === 'number'
+    ? member.workHoursStart
+    : CONSTANTS.WORK_HOURS_START;
+  const end = typeof member.workHoursEnd === 'number'
+    ? member.workHoursEnd
+    : CONSTANTS.WORK_HOURS_END;
+  return { start, end };
+}
+
+/**
+ * Join a list of names into a readable phrase, capping how many are
+ * spelled out so the summary line never runs on for large teams.
+ * @param {string[]} names
+ * @param {number} cap - Max names to spell out before switching to "and N more"
+ * @returns {string}
+ */
+function joinNames(names, cap = 2) {
+  if (names.length <= cap) {
+    if (names.length === 1) return names[0];
+    return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  }
+  const shown = names.slice(0, cap);
+  const remaining = names.length - cap;
+  return `${shown.join(', ')} and ${remaining} more`;
+}
+
+/**
+ * Build the one-line "who's in business hours right now" summary.
+ * Always names the smaller/more useful side (the minority in business
+ * hours, or the exceptions when most people are) so it stays a short,
+ * readable sentence regardless of team size or which way it tips.
+ * @param {string[]} businessNames - Names currently in business hours
+ * @param {string[]} otherNames - Names currently outside business hours
+ * @returns {string}
+ */
+function buildStatusSummary(businessNames, otherNames) {
+  const total = businessNames.length + otherNames.length;
+  if (total === 0) return '';
+  if (businessNames.length === total) return "Everyone's in business hours right now";
+  if (businessNames.length === 0) return 'Nobody\'s in business hours right now';
+
+  if (businessNames.length <= otherNames.length) {
+    const verb = businessNames.length === 1 ? 'is' : 'are';
+    return `${joinNames(businessNames)} ${verb} in business hours`;
+  }
+
+  const verb = otherNames.length === 1 ? 'is' : 'are';
+  return `Everyone except ${joinNames(otherNames)} ${verb} in business hours`;
+}
+
+/**
+ * Format a Date as the compact UTC basic-format string Google Calendar's
+ * quick-add link expects, e.g. "20260830T140000Z".
+ * @param {Date} date
+ * @returns {string}
+ */
+function formatDateForGoogleCalendar(date) {
+  return date.toISOString().replace(/[-:]|\.\d{3}/g, '');
+}
+
+/**
+ * Build a "quick add" calendar URL that opens a pre-filled event draft in
+ * the browser — no OAuth, no extension permissions, the user just reviews
+ * and saves it in whichever Google/Microsoft account is already signed in.
+ * @param {'google'|'outlook'} provider
+ * @param {{title: string, start: Date, end: Date, description: string}} event
+ * @returns {string}
+ */
+function buildCalendarUrl(provider, { title, start, end, description }) {
+  const encodedTitle = encodeURIComponent(title);
+  const encodedDetails = encodeURIComponent(description);
+
+  if (provider === 'outlook') {
+    const startdt = encodeURIComponent(start.toISOString());
+    const enddt = encodeURIComponent(end.toISOString());
+    return `https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent&subject=${encodedTitle}&startdt=${startdt}&enddt=${enddt}&body=${encodedDetails}`;
+  }
+
+  const dates = `${formatDateForGoogleCalendar(start)}/${formatDateForGoogleCalendar(end)}`;
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodedTitle}&dates=${dates}&details=${encodedDetails}`;
+}
+
 function formatDateShort(date) {
   const today = new Date();
   const yesterday = new Date(today);
@@ -295,7 +384,23 @@ document.addEventListener('DOMContentLoaded', () => {
   const settingsBtn = document.getElementById('settingsBtn');
   const homeBaseEl = document.getElementById('homeBase');
   const homeTimeEl = document.getElementById('homeTime');
-  
+  const statusSummaryRowEl = document.getElementById('statusSummaryRow');
+  const statusSummaryEl = document.getElementById('statusSummary');
+  const copyMessageBtnEl = document.getElementById('copyMessageBtn');
+  const scheduleBtnEl = document.getElementById('scheduleBtn');
+  const scheduleMenuEl = document.getElementById('scheduleMenu');
+
+  // Selection: a sticky subset of cities that scopes the summary/copy line
+  // and unlocks "Suggest a time". Selection mode itself is a pure picker.
+  const normalHeaderEl = document.getElementById('normalHeader');
+  const selectModeHeaderEl = document.getElementById('selectModeHeader');
+  const selectModeBtn = document.getElementById('selectModeBtn');
+  const cancelSelectBtn = document.getElementById('cancelSelectBtn');
+  const doneSelectBtn = document.getElementById('doneSelectBtn');
+  const selectedCountEl = document.getElementById('selectedCount');
+  const selectionFooterEl = document.getElementById('selectionFooter');
+  const notSelectedNoteEl = document.getElementById('notSelectedNote');
+
   // Slider DOM references
   const timeSlider = document.getElementById('timeSlider');
   const sliderTimeDisplay = document.getElementById('sliderTimeDisplay');
@@ -320,6 +425,14 @@ document.addEventListener('DOMContentLoaded', () => {
   let lastClickTime = 0;
   let pendingRender = null;
   let draggedSlider = null; // Track which slider is being dragged (outside render to persist)
+  let currentShareMessage = ''; // Text the copy-message button will put on the clipboard
+  let copyFeedbackTimeout = null;
+  let calendarProvider = null; // null = ask which calendar; otherwise 'google' or 'outlook'
+  let currentScheduleDate = null; // The moment currently shown, used as the event start
+  let currentScheduleLines = []; // "8:02 AM in New York" style lines, one per line, for the event description
+  let selectionMode = false; // Actively picking (checkboxes showing)
+  let selectedTimezones = new Set(); // Committed/sticky selection, persisted to storage
+  let pendingSelection = new Set(); // Working copy edited while selectionMode is on
   // Toggle settings
   let isDarkMode = null; // null = use system preference, true/false = override
   let use24HourFormat = false; // 24-hour time format (false = 12-hour)
@@ -327,7 +440,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let focusedRowIndex = null; // Currently focused row index (null = no focus, -1 = home base focus)
 
   // Load data with error handling
-  chrome.storage.sync.get(['team', 'homeBase', 'quickTimes', 'isDarkMode', 'use24HourFormat'], (result) => {
+  chrome.storage.sync.get(['team', 'homeBase', 'quickTimes', 'isDarkMode', 'use24HourFormat', 'calendarProvider'], (result) => {
     // Check for Chrome runtime errors
     if (chrome.runtime.lastError) {
       console.error('Storage error:', chrome.runtime.lastError);
@@ -404,12 +517,25 @@ document.addEventListener('DOMContentLoaded', () => {
     if (result.use24HourFormat !== undefined) {
       use24HourFormat = result.use24HourFormat;
     }
-    
+
+    if (result.calendarProvider) {
+      calendarProvider = result.calendarProvider;
+    }
+
     // Initialize toggles
     initializeToggles(result);
     applyDarkMode();
-    
-    render();
+
+    // Load the sticky city selection (if any) before the first render, so
+    // the summary/copy scope to it from the start rather than flashing
+    // "everyone" first.
+    chrome.storage.local.get(['selectedTimezones'], (localResult) => {
+      if (!chrome.runtime.lastError && Array.isArray(localResult.selectedTimezones)) {
+        selectedTimezones = new Set(localResult.selectedTimezones);
+        reconcileSelection(team);
+      }
+      render();
+    });
 
     // Update every minute
     updateInterval = setInterval(() => {
@@ -479,6 +605,7 @@ document.addEventListener('DOMContentLoaded', () => {
   chrome.storage.onChanged.addListener((changes) => {
     if (changes.team) {
       team = changes.team.newValue || [];
+      reconcileSelection(team);
       render();
     }
     if (changes.homeBase) {
@@ -513,11 +640,195 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       render(); // Re-render to update all time displays
     }
+    if (changes.calendarProvider !== undefined) {
+      calendarProvider = changes.calendarProvider.newValue || null;
+    }
   });
 
   // Event listeners
   settingsBtn.addEventListener('click', () => chrome.runtime.openOptionsPage());
-  
+
+  // Copy the current times as a plain-text message, e.g.
+  // "It's 10:00 AM for me (Amsterdam), 9:00 AM in London, ..."
+  if (copyMessageBtnEl) {
+    copyMessageBtnEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!currentShareMessage) return;
+
+      navigator.clipboard.writeText(currentShareMessage).then(() => {
+        copyMessageBtnEl.classList.add('copied');
+        clearTimeout(copyFeedbackTimeout);
+        copyFeedbackTimeout = setTimeout(() => {
+          copyMessageBtnEl.classList.remove('copied');
+        }, CONSTANTS.SUCCESS_DURATION_MS);
+      }).catch((err) => {
+        showErrorMessage('Could not copy to clipboard', err);
+      });
+    });
+  }
+
+  function closeScheduleMenu() {
+    if (!scheduleMenuEl) return;
+    scheduleMenuEl.classList.add('hidden');
+    if (scheduleBtnEl) scheduleBtnEl.setAttribute('aria-expanded', 'false');
+  }
+
+  /**
+   * Open a pre-filled "quick add" draft for the currently displayed moment
+   * (real-time, a manually set slider time, or a "Suggest a time" result)
+   * in the given calendar provider. No sign-in from the extension — the
+   * user reviews and saves the draft in their own Google/Outlook tab.
+   * @param {'google'|'outlook'} provider
+   */
+  function scheduleEvent(provider) {
+    if (!currentScheduleDate || !currentScheduleLines.length) return;
+    const start = new Date(currentScheduleDate);
+    const end = new Date(start.getTime() + CONSTANTS.SCHEDULE_EVENT_DURATION_MINUTES * CONSTANTS.MILLISECONDS_PER_MINUTE);
+    const url = buildCalendarUrl(provider, {
+      title: 'Team Meeting',
+      start,
+      end,
+      description: currentScheduleLines.join('\n')
+    });
+    chrome.tabs.create({ url });
+  }
+
+  if (scheduleBtnEl) {
+    scheduleBtnEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (calendarProvider) {
+        scheduleEvent(calendarProvider);
+        return;
+      }
+      // No preference saved yet — ask once, then remember the choice.
+      // (Changing it later happens from Settings, not here.)
+      if (!scheduleMenuEl) return;
+      const isOpen = !scheduleMenuEl.classList.contains('hidden');
+      if (isOpen) {
+        closeScheduleMenu();
+      } else {
+        scheduleMenuEl.classList.remove('hidden');
+        scheduleBtnEl.setAttribute('aria-expanded', 'true');
+      }
+    });
+  }
+
+  if (scheduleMenuEl) {
+    scheduleMenuEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const item = e.target.closest('.schedule-menu-item');
+      if (!item) return;
+      const provider = item.dataset.provider;
+      closeScheduleMenu();
+      calendarProvider = provider;
+      chrome.storage.sync.set({ calendarProvider: provider }, () => {
+        if (chrome.runtime.lastError) {
+          console.error('Failed to save calendar provider:', chrome.runtime.lastError);
+        }
+      });
+      scheduleEvent(provider);
+    });
+  }
+
+  // Close the provider popover on any click outside it
+  document.addEventListener('click', closeScheduleMenu);
+
+  /**
+   * Drop any selected timezones that no longer belong to any current team
+   * member (e.g. that city was deleted in Options). Without this, a stale
+   * entry can silently persist forever — including, if every selected city
+   * gets removed, hiding the entire row list with no visible cause.
+   * @param {Object[]} currentTeam
+   */
+  function reconcileSelection(currentTeam) {
+    if (!selectedTimezones.size) return;
+    const validTimezones = new Set(currentTeam.map(m => m.timezone));
+    const next = new Set([...selectedTimezones].filter(tz => validTimezones.has(tz)));
+    if (next.size === selectedTimezones.size) return; // Nothing stale, nothing to save
+
+    selectedTimezones = next;
+    chrome.storage.local.set({ selectedTimezones: [...selectedTimezones] }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('Failed to save reconciled selection:', chrome.runtime.lastError);
+      }
+    });
+  }
+
+  /** Refresh the "N selected" label while actively picking. */
+  function updateSelectionUI() {
+    if (selectedCountEl) {
+      selectedCountEl.textContent = `${pendingSelection.size} selected`;
+    }
+  }
+
+  /**
+   * Open the picker. Pre-checks whatever's currently selected, so
+   * reopening to tweak a selection doesn't lose it, and Cancel can
+   * discard changes without touching the committed selection.
+   */
+  function enterSelectionMode() {
+    if (!team.length) return;
+    selectionMode = true;
+    pendingSelection = new Set(selectedTimezones);
+    // Collapse any expanded row/slider — the picker replaces it
+    expandedIndex = null;
+    if (isCustomMode) {
+      isCustomMode = false;
+      customControls.classList.add('hidden');
+      homeBaseEl.classList.remove('expanded');
+      customDate = new Date();
+    }
+    normalHeaderEl.classList.add('hidden');
+    selectModeHeaderEl.classList.remove('hidden');
+    updateSelectionUI();
+    render();
+  }
+
+  function closeSelectionMode() {
+    selectionMode = false;
+    normalHeaderEl.classList.remove('hidden');
+    selectModeHeaderEl.classList.add('hidden');
+    render();
+  }
+
+  /** Discard any changes made while picking; the committed selection stands. */
+  function cancelSelection() {
+    pendingSelection = new Set();
+    closeSelectionMode();
+  }
+
+  /** Commit the picker's choices as the new sticky selection. */
+  function commitSelection() {
+    selectedTimezones = new Set(pendingSelection);
+    pendingSelection = new Set();
+    chrome.storage.local.set({ selectedTimezones: [...selectedTimezones] }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('Failed to save selection:', chrome.runtime.lastError);
+      }
+    });
+    closeSelectionMode();
+  }
+
+  if (selectModeBtn) {
+    selectModeBtn.addEventListener('click', enterSelectionMode);
+  }
+  if (cancelSelectBtn) {
+    cancelSelectBtn.addEventListener('click', cancelSelection);
+  }
+  if (doneSelectBtn) {
+    doneSelectBtn.addEventListener('click', commitSelection);
+  }
+
+  if (notSelectedNoteEl) {
+    notSelectedNoteEl.addEventListener('click', enterSelectionMode);
+    notSelectedNoteEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        enterSelectionMode();
+      }
+    });
+  }
+
   // Toggle custom time picker when clicking on home base
   homeBaseEl.addEventListener('click', () => {
     if (homeBaseEl.classList.contains('hidden') || isRendering) return;
@@ -653,36 +964,56 @@ document.addEventListener('DOMContentLoaded', () => {
       const offsetB = getTimezoneOffset(baseDate, b.timezone);
       return offsetA - offsetB;
     });
-    
+
+    // Only indices that actually have a rendered row right now — a sticky
+    // selection hides the rest, and focus must skip over them too, or it
+    // silently gets stuck on a row that isn't there.
+    const visibleIndices = sortedTeam
+      .map((m, i) => ({ m, i }))
+      .filter(({ m }) => selectionMode || !selectedTimezones.size || selectedTimezones.has(m.timezone))
+      .map(({ i }) => i);
+
     switch(e.key) {
       case 'ArrowDown':
         e.preventDefault();
         if (focusedRowIndex === null || focusedRowIndex === -1) {
-          // Start from first row or home base
-          if (sortedTeam.length > 0) {
-            focusedRowIndex = 0;
+          // Start from first visible row or home base
+          if (visibleIndices.length > 0) {
+            focusedRowIndex = visibleIndices[0];
           } else if (homeBase && !homeBaseEl.classList.contains('hidden')) {
             focusedRowIndex = -1;
           }
-        } else if (focusedRowIndex < sortedTeam.length - 1) {
-          focusedRowIndex++;
+        } else {
+          const pos = visibleIndices.indexOf(focusedRowIndex);
+          if (pos === -1) {
+            // Focus was on a row that's no longer visible — recover to the first one
+            if (visibleIndices.length > 0) focusedRowIndex = visibleIndices[0];
+          } else if (pos < visibleIndices.length - 1) {
+            focusedRowIndex = visibleIndices[pos + 1];
+          }
         }
         updateKeyboardFocus();
         break;
-        
+
       case 'ArrowUp':
         e.preventDefault();
         if (focusedRowIndex === null) {
-          // Start from last row
-          if (sortedTeam.length > 0) {
-            focusedRowIndex = sortedTeam.length - 1;
+          // Start from last visible row
+          if (visibleIndices.length > 0) {
+            focusedRowIndex = visibleIndices[visibleIndices.length - 1];
           } else if (homeBase && !homeBaseEl.classList.contains('hidden')) {
             focusedRowIndex = -1;
           }
-        } else if (focusedRowIndex > 0) {
-          focusedRowIndex--;
-        } else if (focusedRowIndex === 0 && homeBase && !homeBaseEl.classList.contains('hidden')) {
-          focusedRowIndex = -1; // Move to home base
+        } else {
+          const pos = visibleIndices.indexOf(focusedRowIndex);
+          if (pos === -1) {
+            // Focus was on a row that's no longer visible — recover to the last one
+            if (visibleIndices.length > 0) focusedRowIndex = visibleIndices[visibleIndices.length - 1];
+          } else if (pos > 0) {
+            focusedRowIndex = visibleIndices[pos - 1];
+          } else if (pos === 0 && homeBase && !homeBaseEl.classList.contains('hidden')) {
+            focusedRowIndex = -1; // Move to home base
+          }
         }
         updateKeyboardFocus();
         break;
@@ -717,6 +1048,12 @@ document.addEventListener('DOMContentLoaded', () => {
         
       case 'Escape':
         e.preventDefault();
+        // If the selection picker is open, Escape backs out of it the same
+        // way Cancel does — same as every other open panel in this popup.
+        if (selectionMode) {
+          cancelSelection();
+          break;
+        }
         // Clear focus and collapse any expanded rows
         focusedRowIndex = null;
         if (expandedIndex !== null) {
@@ -1028,6 +1365,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!team.length) {
         showEmptyState();
         homeBaseEl.classList.add('hidden');
+        if (statusSummaryRowEl) statusSummaryRowEl.classList.add('hidden');
+        if (selectionFooterEl) selectionFooterEl.classList.add('hidden');
+        if (selectModeBtn) selectModeBtn.disabled = true;
+        currentScheduleDate = null;
+        currentScheduleLines = [];
         isRendering = false;
         return;
       }
@@ -1065,6 +1407,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // Show home base
+    if (selectModeBtn) selectModeBtn.disabled = false;
+    let homeSharePart = '';
     if (homeBase) {
       homeBaseEl.classList.remove('hidden');
       const homeTime = formatTime(baseDate, homeBase.timezone);
@@ -1072,10 +1416,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const homeCityEl = document.getElementById('homeCity');
       if (homeCityEl) {
         // Use stored city name, or derive from timezone if missing
-        const cityName = homeBase.city && homeBase.city !== 'My Location' 
-          ? homeBase.city 
+        const cityName = homeBase.city && homeBase.city !== 'My Location'
+          ? homeBase.city
           : getCityNameFromTimezone(homeBase.timezone);
-        
+        homeSharePart = `${homeTime} for me (${cityName})`;
+
         // Check for holiday in the home base country
         const country = getCountryFromTimezone(homeBase.timezone);
         const localDateStr = new Intl.DateTimeFormat('en-CA', {
@@ -1123,6 +1468,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     let html = '';
+    const businessHoursNames = [];
+    const otherNames = [];
+    const memberShareParts = [];
 
     sortedTeam.forEach((member, index) => {
       const isExpanded = expandedIndex === index;
@@ -1146,8 +1494,24 @@ document.addEventListener('DOMContentLoaded', () => {
       
       const timeString = formatTime(rowDate, member.timezone);
       const hour = getHourInTimezone(rowDate, member.timezone);
-      const isWorkHours = hour >= CONSTANTS.WORK_HOURS_START && hour < CONSTANTS.WORK_HOURS_END;
+      const { start: workHoursStart, end: workHoursEnd } = getEffectiveWorkHours(member);
+      const isWorkHours = hour >= workHoursStart && hour < workHoursEnd;
       const isNight = hour >= CONSTANTS.NIGHT_HOURS_START || hour < CONSTANTS.NIGHT_HOURS_END;
+
+      // Use the moment reflected in this row (real-time or the currently
+      // selected slider time) for the "who's in business hours" summary,
+      // and for the shareable message (so copy always matches what's shown).
+      // When a sticky selection is active, only selected cities count
+      // toward the summary/copy.
+      const isIncludedInSummary = !selectedTimezones.size || selectedTimezones.has(member.timezone);
+      if (isIncludedInSummary) {
+        (isWorkHours ? businessHoursNames : otherNames).push(member.name || member.city);
+        memberShareParts.push(`${timeString} in ${member.name || member.city}`);
+      }
+
+      // While actively picking, every row must stay visible so it can be
+      // checked/unchecked. Otherwise, an active selection hides the rest.
+      const isRowVisible = selectionMode || isIncludedInSummary;
       
       // Calculate offset from home base (use baseDate for offset calculation)
       const offsetStr = getOffsetFromHomeBase(baseDate, member.timezone);
@@ -1177,9 +1541,13 @@ document.addEventListener('DOMContentLoaded', () => {
         ? '<span class="holiday-indicator" data-holiday="' + escapeHtml(holidayName) + '">🎉</span>' 
         : '';
       
+      if (!isRowVisible) return;
+
+      const isChecked = pendingSelection.has(member.timezone);
       html += `
-        <div class="row ${statusClass} ${isExpanded ? 'expanded clickable' : 'clickable'} ${focusClass}" data-timezone="${escapeHtml(member.timezone)}" data-index="${index}" tabindex="${isFocused ? '0' : '-1'}">
+        <div class="row ${statusClass} ${selectionMode ? 'selection-mode' : (isExpanded ? 'expanded clickable' : 'clickable')} ${focusClass}" data-timezone="${escapeHtml(member.timezone)}" data-index="${index}" tabindex="${isFocused ? '0' : '-1'}">
           ${holidayName ? '<span class="holiday-tooltip">' + escapeHtml(holidayName) + '</span>' : ''}
+          ${selectionMode ? `<input type="checkbox" class="row-select-checkbox" data-timezone="${escapeHtml(member.timezone)}" aria-label="Select ${escapeHtml(member.name)}" ${isChecked ? 'checked' : ''}>` : ''}
           <div class="person">
             <span class="name">${escapeHtml(member.name)}${holidayIndicator}</span>
             <span class="sub">${escapeHtml(namesLine)}</span>
@@ -1244,7 +1612,47 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     listEl.innerHTML = html;
-    
+
+    if (statusSummaryEl) {
+      const summaryText = buildStatusSummary(businessHoursNames, otherNames);
+      statusSummaryEl.textContent = summaryText;
+    }
+    if (statusSummaryRowEl) {
+      statusSummaryRowEl.classList.toggle('hidden', !memberShareParts.length);
+    }
+
+    // Build the shareable message from the same data just rendered, so
+    // what gets copied always matches what's on screen.
+    const shareParts = homeSharePart ? [homeSharePart, ...memberShareParts] : memberShareParts;
+    currentShareMessage = shareParts.length ? `It's ${shareParts.join(', ')}` : '';
+    currentScheduleDate = baseDate;
+    currentScheduleLines = shareParts;
+    if (copyMessageBtnEl) {
+      copyMessageBtnEl.title = currentShareMessage
+        ? `Copy: "${currentShareMessage}"`
+        : 'Copy times as a message';
+    }
+
+    // Sticky-selection footer: only exists at all once a selection is set.
+    if (selectionFooterEl) {
+      const hasSelection = selectedTimezones.size > 0 && !selectionMode;
+      selectionFooterEl.classList.toggle('hidden', !hasSelection);
+
+      if (hasSelection) {
+        const notSelectedNames = team
+          .filter(m => !selectedTimezones.has(m.timezone))
+          .map(m => m.name || m.city);
+
+        if (notSelectedNoteEl) {
+          notSelectedNoteEl.classList.toggle('hidden', !notSelectedNames.length);
+          if (notSelectedNames.length) {
+            const verb = notSelectedNames.length === 1 ? 'is' : 'are';
+            notSelectedNoteEl.textContent = `${joinNames(notSelectedNames)} ${verb} not selected`;
+          }
+        }
+      }
+    }
+
     // Prevent clicks on holiday indicator from triggering row expansion
     listEl.querySelectorAll('.holiday-indicator').forEach(indicator => {
       indicator.addEventListener('click', (e) => {
@@ -1262,15 +1670,47 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Create a single click handler for all rows
     listEl._rowClickHandler = (e) => {
+      // In selection mode, a row click toggles that city instead of
+      // expanding it — handled entirely separately from the normal flow.
+      const selectionRow = e.target.closest('.row.selection-mode');
+      if (selectionRow) {
+        const timezone = selectionRow.dataset.timezone;
+        if (!timezone) return;
+        const checkbox = selectionRow.querySelector('.row-select-checkbox');
+
+        if (e.target === checkbox) {
+          // The checkbox already toggled itself natively — just sync our
+          // state to it. Calling preventDefault() here would make the
+          // browser revert the native toggle, which is what caused
+          // clicks to silently not register.
+          if (checkbox.checked) {
+            pendingSelection.add(timezone);
+          } else {
+            pendingSelection.delete(timezone);
+          }
+        } else {
+          // Clicked elsewhere on the row — toggle manually.
+          e.preventDefault();
+          if (pendingSelection.has(timezone)) {
+            pendingSelection.delete(timezone);
+          } else {
+            pendingSelection.add(timezone);
+          }
+          if (checkbox) checkbox.checked = pendingSelection.has(timezone);
+        }
+        updateSelectionUI();
+        return;
+      }
+
       // Don't trigger if clicking on inputs/buttons inside slider controls
       if (e.target.closest('.city-slider-controls')) return;
       if (isRendering) return; // Prevent concurrent actions
-      
+
       // Debounce rapid clicks
       const now = Date.now();
       if (now - lastClickTime < CONSTANTS.DEBOUNCE_CLICK_MS) return;
       lastClickTime = now;
-      
+
       // Find the clicked row
       const row = e.target.closest('.row.clickable');
       if (!row) return;

@@ -29,6 +29,9 @@ const CONSTANTS = {
   LOADING_DURATION_MS: 400,
   SUCCESS_DURATION_MS: 1600,
 
+  // Calendar scheduling
+  SCHEDULE_EVENT_DURATION_MINUTES: 30, // Default length of a scheduled meeting
+
   // Work hours definition
   WORK_HOURS_START: 9,  // 9 AM
   WORK_HOURS_END: 18,    // 6 PM

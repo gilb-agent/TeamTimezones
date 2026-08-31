@@ -324,6 +324,139 @@ body {
   flex-shrink: 0;
 }
 
+.header-icon-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.text-link-btn {
+  background: transparent;
+  border: none;
+  padding: 4px 2px;
+  color: var(--accent);
+  font-family: var(--md-sys-typescale-label-medium-font);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.text-link-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.select-mode-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.select-mode-header.hidden {
+  display: none;
+}
+
+.selected-count {
+  font-family: var(--md-sys-typescale-label-medium-font);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.selection-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 4px 4px;
+  margin-top: 4px;
+  border-top: 0.5px solid var(--border);
+  flex-shrink: 0;
+}
+
+.selection-footer.hidden {
+  display: none;
+}
+
+.not-selected-note {
+  font-family: var(--md-sys-typescale-label-medium-font);
+  font-size: 11px;
+  color: var(--muted);
+  text-decoration: underline;
+  text-decoration-color: var(--border);
+  cursor: pointer;
+}
+
+.not-selected-note.hidden {
+  display: none;
+}
+
+.secondary-btn {
+  background: transparent;
+  color: var(--md-sys-color-primary);
+  border: 1px solid var(--md-sys-color-outline);
+  padding: 8px 20px;
+  border-radius: var(--md-sys-shape-corner-extra-large);
+  cursor: pointer;
+  font-family: var(--md-sys-typescale-label-large-font);
+  font-size: 12px;
+  font-weight: 500;
+  min-height: 36px;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.secondary-btn:hover {
+  background: var(--hover);
+}
+
+.secondary-btn.hidden {
+  display: none;
+}
+
+.secondary-btn:disabled,
+.primary-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  box-shadow: none;
+}
+
+/* Selection checkbox, styled as a radio-style circle (WhatsApp-style
+   selection) rather than a square checkbox */
+.row-select-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--md-sys-color-outline);
+  background: transparent;
+  flex-shrink: 0;
+  cursor: pointer;
+  margin: 0;
+  position: relative;
+}
+
+.row-select-checkbox:checked {
+  background-color: var(--work-hours);
+  border-color: var(--work-hours);
+  /* Same checkmark shape used by the copy button's "copied" state,
+     reliably centered via background-position instead of hand-placed
+     offsets. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23123617' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 12px 12px;
+}
+
+.row.selection-mode {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
 .title {
   font-family: var(--md-sys-typescale-title-large-font);
   font-size: 11px;
@@ -984,6 +1117,121 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.status-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px 8px;
+}
+
+.status-summary-row.hidden {
+  display: none;
+}
+
+.status-summary {
+  font-family: var(--md-sys-typescale-label-medium-font);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.schedule-btn-wrap {
+  position: relative;
+}
+
+.schedule-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--md-sys-color-surface);
+  border-radius: var(--md-sys-shape-corner-medium);
+  box-shadow: var(--md-sys-elevation-level3);
+  padding: 4px;
+  min-width: 150px;
+  z-index: 20;
+}
+
+.schedule-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--md-sys-color-on-surface);
+  font-family: var(--md-sys-typescale-body-medium-font);
+  font-size: 12px;
+  line-height: 16px;
+  padding: 8px 10px;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  cursor: pointer;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.schedule-menu-item:hover {
+  background: var(--hover);
+}
+
+.copy-message-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  transition: color 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.copy-message-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--md-sys-color-on-surface);
+  opacity: 0;
+  transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1);
+  border-radius: inherit;
+}
+
+.copy-message-btn:hover::before {
+  opacity: 0.08;
+}
+
+.copy-message-btn:focus-visible::before {
+  opacity: 0.12;
+}
+
+.copy-message-btn .icon-check {
+  display: none;
+}
+
+.copy-message-btn.copied {
+  color: var(--accent);
+}
+
+.copy-message-btn.copied .icon-copy {
+  display: none;
+}
+
+.copy-message-btn.copied .icon-check {
+  display: block;
 }
 
 .home-content {
