@@ -532,6 +532,7 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.storage.local.get(['selectedTimezones'], (localResult) => {
       if (!chrome.runtime.lastError && Array.isArray(localResult.selectedTimezones)) {
         selectedTimezones = new Set(localResult.selectedTimezones);
+        reconcileSelection(team);
       }
       render();
     });
@@ -604,6 +605,7 @@ document.addEventListener('DOMContentLoaded', () => {
   chrome.storage.onChanged.addListener((changes) => {
     if (changes.team) {
       team = changes.team.newValue || [];
+      reconcileSelection(team);
       render();
     }
     if (changes.homeBase) {
@@ -730,6 +732,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Close the provider popover on any click outside it
   document.addEventListener('click', closeScheduleMenu);
+
+  /**
+   * Drop any selected timezones that no longer belong to any current team
+   * member (e.g. that city was deleted in Options). Without this, a stale
+   * entry can silently persist forever — including, if every selected city
+   * gets removed, hiding the entire row list with no visible cause.
+   * @param {Object[]} currentTeam
+   */
+  function reconcileSelection(currentTeam) {
+    if (!selectedTimezones.size) return;
+    const validTimezones = new Set(currentTeam.map(m => m.timezone));
+    const next = new Set([...selectedTimezones].filter(tz => validTimezones.has(tz)));
+    if (next.size === selectedTimezones.size) return; // Nothing stale, nothing to save
+
+    selectedTimezones = next;
+    chrome.storage.local.set({ selectedTimezones: [...selectedTimezones] }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('Failed to save reconciled selection:', chrome.runtime.lastError);
+      }
+    });
+  }
 
   /** Refresh the "N selected" label while actively picking. */
   function updateSelectionUI() {
@@ -941,36 +964,56 @@ document.addEventListener('DOMContentLoaded', () => {
       const offsetB = getTimezoneOffset(baseDate, b.timezone);
       return offsetA - offsetB;
     });
-    
+
+    // Only indices that actually have a rendered row right now — a sticky
+    // selection hides the rest, and focus must skip over them too, or it
+    // silently gets stuck on a row that isn't there.
+    const visibleIndices = sortedTeam
+      .map((m, i) => ({ m, i }))
+      .filter(({ m }) => selectionMode || !selectedTimezones.size || selectedTimezones.has(m.timezone))
+      .map(({ i }) => i);
+
     switch(e.key) {
       case 'ArrowDown':
         e.preventDefault();
         if (focusedRowIndex === null || focusedRowIndex === -1) {
-          // Start from first row or home base
-          if (sortedTeam.length > 0) {
-            focusedRowIndex = 0;
+          // Start from first visible row or home base
+          if (visibleIndices.length > 0) {
+            focusedRowIndex = visibleIndices[0];
           } else if (homeBase && !homeBaseEl.classList.contains('hidden')) {
             focusedRowIndex = -1;
           }
-        } else if (focusedRowIndex < sortedTeam.length - 1) {
-          focusedRowIndex++;
+        } else {
+          const pos = visibleIndices.indexOf(focusedRowIndex);
+          if (pos === -1) {
+            // Focus was on a row that's no longer visible — recover to the first one
+            if (visibleIndices.length > 0) focusedRowIndex = visibleIndices[0];
+          } else if (pos < visibleIndices.length - 1) {
+            focusedRowIndex = visibleIndices[pos + 1];
+          }
         }
         updateKeyboardFocus();
         break;
-        
+
       case 'ArrowUp':
         e.preventDefault();
         if (focusedRowIndex === null) {
-          // Start from last row
-          if (sortedTeam.length > 0) {
-            focusedRowIndex = sortedTeam.length - 1;
+          // Start from last visible row
+          if (visibleIndices.length > 0) {
+            focusedRowIndex = visibleIndices[visibleIndices.length - 1];
           } else if (homeBase && !homeBaseEl.classList.contains('hidden')) {
             focusedRowIndex = -1;
           }
-        } else if (focusedRowIndex > 0) {
-          focusedRowIndex--;
-        } else if (focusedRowIndex === 0 && homeBase && !homeBaseEl.classList.contains('hidden')) {
-          focusedRowIndex = -1; // Move to home base
+        } else {
+          const pos = visibleIndices.indexOf(focusedRowIndex);
+          if (pos === -1) {
+            // Focus was on a row that's no longer visible — recover to the last one
+            if (visibleIndices.length > 0) focusedRowIndex = visibleIndices[visibleIndices.length - 1];
+          } else if (pos > 0) {
+            focusedRowIndex = visibleIndices[pos - 1];
+          } else if (pos === 0 && homeBase && !homeBaseEl.classList.contains('hidden')) {
+            focusedRowIndex = -1; // Move to home base
+          }
         }
         updateKeyboardFocus();
         break;
@@ -1005,6 +1048,12 @@ document.addEventListener('DOMContentLoaded', () => {
         
       case 'Escape':
         e.preventDefault();
+        // If the selection picker is open, Escape backs out of it the same
+        // way Cancel does — same as every other open panel in this popup.
+        if (selectionMode) {
+          cancelSelection();
+          break;
+        }
         // Clear focus and collapse any expanded rows
         focusedRowIndex = null;
         if (expandedIndex !== null) {
