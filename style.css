@@ -391,31 +391,6 @@ body {
   display: none;
 }
 
-/* Small inline link, not a full-width button — sits right under the
-   not-selected note so it visually reads as part of the same selection
-   state instead of a separate, disconnected action. */
-.suggest-time-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: transparent;
-  border: none;
-  padding: 2px 4px;
-  color: var(--accent);
-  font-family: var(--md-sys-typescale-label-medium-font);
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.suggest-time-link.hidden {
-  display: none;
-}
-
-.suggest-time-link svg {
-  flex-shrink: 0;
-}
-
 .secondary-btn {
   background: transparent;
   color: var(--md-sys-color-primary);

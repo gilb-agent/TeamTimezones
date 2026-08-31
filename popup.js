@@ -400,9 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const selectedCountEl = document.getElementById('selectedCount');
   const selectionFooterEl = document.getElementById('selectionFooter');
   const notSelectedNoteEl = document.getElementById('notSelectedNote');
-  const suggestTimeBtn = document.getElementById('suggestTimeBtn');
-  const suggestTimeLabelEl = document.getElementById('suggestTimeLabel');
-  
+
   // Slider DOM references
   const timeSlider = document.getElementById('timeSlider');
   const sliderTimeDisplay = document.getElementById('sliderTimeDisplay');
@@ -435,7 +433,6 @@ document.addEventListener('DOMContentLoaded', () => {
   let selectionMode = false; // Actively picking (checkboxes showing)
   let selectedTimezones = new Set(); // Committed/sticky selection, persisted to storage
   let pendingSelection = new Set(); // Working copy edited while selectionMode is on
-  const MAX_SUGGEST_TIME_CITIES = 3; // "Suggest a time" only shows for a small, focused selection
   // Toggle settings
   let isDarkMode = null; // null = use system preference, true/false = override
   let use24HourFormat = false; // 24-hour time format (false = 12-hour)
@@ -806,37 +803,6 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         enterSelectionMode();
       }
-    });
-  }
-
-  if (suggestTimeBtn) {
-    suggestTimeBtn.addEventListener('click', () => {
-      if (!selectedTimezones.size) return;
-      const selectedMembers = team.filter(m => selectedTimezones.has(m.timezone));
-
-      const participants = selectedMembers.map(m => {
-        const { start, end } = getEffectiveWorkHours(m);
-        return { timezone: m.timezone, start, end };
-      });
-      if (homeBase) {
-        const { start, end } = getEffectiveWorkHours(homeBase);
-        participants.push({ timezone: homeBase.timezone, start, end });
-      }
-
-      const now = new Date();
-      const result = findBestTime(now, participants);
-      if (!result) return;
-
-      const suggestedDate = new Date(now);
-      suggestedDate.setHours(0, result.minutes, 0, 0);
-      customDate = suggestedDate;
-      sliderDate = new Date(suggestedDate);
-      isCustomMode = true;
-      if (timeSlider) timeSlider.value = result.minutes;
-      updateSliderDisplay();
-      homeBaseEl.classList.add('expanded');
-      customControls.classList.remove('hidden');
-      render();
     });
   }
 
@@ -1342,53 +1308,6 @@ document.addEventListener('DOMContentLoaded', () => {
     render();
   }
 
-  /**
-   * Score a candidate instant for how well it fits a set of business-hours
-   * windows: 0 if it's inside every window, otherwise the summed distance
-   * (in hours) each participant falls outside their own window.
-   * @param {Date} candidateDate
-   * @param {{timezone: string, start: number, end: number}[]} participants
-   * @returns {number}
-   */
-  function scoreCandidateTime(candidateDate, participants) {
-    return participants.reduce((total, p) => {
-      const hour = getHourInTimezone(candidateDate, p.timezone);
-      if (hour >= p.start && hour < p.end) return total;
-      const distance = hour < p.start ? p.start - hour : hour - p.end;
-      return total + distance;
-    }, 0);
-  }
-
-  /**
-   * Find the best time, today, for a set of participants: a clean overlap
-   * if one exists, otherwise the candidate that minimizes total distance
-   * outside everyone's business hours. Scans in the same system-local
-   * wall-clock terms the "Set Time" slider already uses, so the result is
-   * a minutes-since-midnight value directly usable as the slider's value.
-   * @param {Date} referenceDate - Only its calendar day is used.
-   * @param {{timezone: string, start: number, end: number}[]} participants
-   * @returns {{minutes: number, isCleanOverlap: boolean}|null}
-   */
-  function findBestTime(referenceDate, participants) {
-    if (!participants.length) return null;
-
-    let bestMinutes = 0;
-    let bestScore = Infinity;
-
-    for (let minutes = 0; minutes < CONSTANTS.MINUTES_PER_DAY; minutes += CONSTANTS.SLIDER_STEP_MINUTES) {
-      const candidate = new Date(referenceDate);
-      candidate.setHours(0, minutes, 0, 0);
-      const score = scoreCandidateTime(candidate, participants);
-      if (score < bestScore) {
-        bestScore = score;
-        bestMinutes = minutes;
-      }
-      if (bestScore === 0) break; // Can't beat a clean overlap
-    }
-
-    return { minutes: bestMinutes, isCleanOverlap: bestScore === 0 };
-  }
-
   function render() {
     if (isRendering) return; // Prevent concurrent renders
     isRendering = true;
@@ -1674,9 +1593,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const notSelectedNames = team
           .filter(m => !selectedTimezones.has(m.timezone))
           .map(m => m.name || m.city);
-        const selectedNames = team
-          .filter(m => selectedTimezones.has(m.timezone))
-          .map(m => m.name || m.city);
 
         if (notSelectedNoteEl) {
           notSelectedNoteEl.classList.toggle('hidden', !notSelectedNames.length);
@@ -1684,16 +1600,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const verb = notSelectedNames.length === 1 ? 'is' : 'are';
             notSelectedNoteEl.textContent = `${joinNames(notSelectedNames)} ${verb} not selected`;
           }
-        }
-
-        // Only offer this for a small, focused selection — naming everyone
-        // in the label is also what keeps it small at that size.
-        const canSuggest = selectedTimezones.size <= MAX_SUGGEST_TIME_CITIES;
-        if (suggestTimeBtn) {
-          suggestTimeBtn.classList.toggle('hidden', !canSuggest);
-        }
-        if (canSuggest && suggestTimeLabelEl) {
-          suggestTimeLabelEl.textContent = `Suggest a time for ${joinNames(selectedNames)}`;
         }
       }
     }
