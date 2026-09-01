@@ -428,6 +428,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentShareMessage = ''; // Text the copy-message button will put on the clipboard
   let copyFeedbackTimeout = null;
   let calendarProvider = null; // null = ask which calendar; otherwise 'google' or 'outlook'
+  let scheduleSignatureEnabled = true; // Credit line in the invite description; opt-out in Settings
   let currentScheduleDate = null; // The moment currently shown, used as the event start
   let currentScheduleLines = []; // "8:02 AM in New York" style lines, one per line, for the event description
   let selectionMode = false; // Actively picking (checkboxes showing)
@@ -440,7 +441,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let focusedRowIndex = null; // Currently focused row index (null = no focus, -1 = home base focus)
 
   // Load data with error handling
-  chrome.storage.sync.get(['team', 'homeBase', 'quickTimes', 'isDarkMode', 'use24HourFormat', 'calendarProvider'], (result) => {
+  chrome.storage.sync.get(['team', 'homeBase', 'quickTimes', 'isDarkMode', 'use24HourFormat', 'calendarProvider', 'scheduleSignatureEnabled'], (result) => {
     // Check for Chrome runtime errors
     if (chrome.runtime.lastError) {
       console.error('Storage error:', chrome.runtime.lastError);
@@ -521,6 +522,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (result.calendarProvider) {
       calendarProvider = result.calendarProvider;
     }
+
+    // Default on — undefined (never set) is treated as enabled
+    scheduleSignatureEnabled = result.scheduleSignatureEnabled !== false;
 
     // Initialize toggles
     initializeToggles(result);
@@ -643,6 +647,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (changes.calendarProvider !== undefined) {
       calendarProvider = changes.calendarProvider.newValue || null;
     }
+    if (changes.scheduleSignatureEnabled !== undefined) {
+      scheduleSignatureEnabled = changes.scheduleSignatureEnabled.newValue !== false;
+    }
   });
 
   // Event listeners
@@ -675,20 +682,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /**
    * Open a pre-filled "quick add" draft for the currently displayed moment
-   * (real-time, a manually set slider time, or a "Suggest a time" result)
-   * in the given calendar provider. No sign-in from the extension — the
-   * user reviews and saves the draft in their own Google/Outlook tab.
+   * (real-time or a manually set slider time) in the given calendar
+   * provider. No sign-in from the extension — the user reviews and saves
+   * the draft in their own Google/Outlook tab.
    * @param {'google'|'outlook'} provider
    */
   function scheduleEvent(provider) {
     if (!currentScheduleDate || !currentScheduleLines.length) return;
     const start = new Date(currentScheduleDate);
     const end = new Date(start.getTime() + CONSTANTS.SCHEDULE_EVENT_DURATION_MINUTES * CONSTANTS.MILLISECONDS_PER_MINUTE);
+    const descriptionLines = [...currentScheduleLines];
+    if (scheduleSignatureEnabled) {
+      descriptionLines.push('', `Scheduled with Team Timezone — ${CONSTANTS.CHROME_WEB_STORE_URL}?utm_source=calendar-invite`);
+    }
     const url = buildCalendarUrl(provider, {
       title: 'Team Meeting',
       start,
       end,
-      description: currentScheduleLines.join('\n')
+      description: descriptionLines.join('\n')
     });
     chrome.tabs.create({ url });
   }

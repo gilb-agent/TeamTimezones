@@ -60,6 +60,7 @@ const newTzSelect = document.getElementById('newTz');
 const addBtn = document.getElementById('addBtn');
 const teamList = document.getElementById('teamList');
 const calendarProviderSelect = document.getElementById('calendarProviderSelect');
+const scheduleSignatureToggle = document.getElementById('scheduleSignatureToggle');
 const toast = document.getElementById('toast');
 const toastMessage = document.getElementById('toastMessage');
 
@@ -97,7 +98,7 @@ function init() {
   }
   
   // Load saved data with error handling
-  chrome.storage.sync.get(['team', 'homeBase', 'isDarkMode', 'calendarProvider'], (result) => {
+  chrome.storage.sync.get(['team', 'homeBase', 'isDarkMode', 'calendarProvider', 'scheduleSignatureEnabled'], (result) => {
     // Check for Chrome runtime errors
     if (chrome.runtime.lastError) {
       console.error('Storage error:', chrome.runtime.lastError);
@@ -193,7 +194,12 @@ function init() {
     if (calendarProviderSelect) {
       calendarProviderSelect.value = result.calendarProvider || '';
     }
-    
+
+    // Default on — undefined (never set) is treated as enabled
+    if (scheduleSignatureToggle) {
+      scheduleSignatureToggle.checked = result.scheduleSignatureEnabled !== false;
+    }
+
     // Listen for dark mode changes from popup
     chrome.storage.onChanged.addListener((changes) => {
       if (changes.isDarkMode !== undefined) {
@@ -218,6 +224,19 @@ function init() {
       chrome.storage.sync.set({ calendarProvider: value || null }, () => {
         if (chrome.runtime.lastError) {
           console.error('Failed to save calendar provider:', chrome.runtime.lastError);
+          showToast('Failed to save. Please try again.');
+          return;
+        }
+        showToast('Saved');
+      });
+    });
+  }
+
+  if (scheduleSignatureToggle) {
+    scheduleSignatureToggle.addEventListener('change', () => {
+      chrome.storage.sync.set({ scheduleSignatureEnabled: scheduleSignatureToggle.checked }, () => {
+        if (chrome.runtime.lastError) {
+          console.error('Failed to save schedule signature preference:', chrome.runtime.lastError);
           showToast('Failed to save. Please try again.');
           return;
         }
