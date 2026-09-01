@@ -31,6 +31,7 @@ const CONSTANTS = {
 
   // Calendar scheduling
   SCHEDULE_EVENT_DURATION_MINUTES: 30, // Default length of a scheduled meeting
+  CHROME_WEB_STORE_URL: 'https://chromewebstore.google.com/detail/makileokchiliacehpmkecgcehebflbb',
 
   // Work hours definition
   WORK_HOURS_START: 9,  // 9 AM

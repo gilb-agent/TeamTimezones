@@ -21,5 +21,5 @@
    "name": "Team Timezones",
    "options_page": "options.html",
    "permissions": [ "storage" ],
-   "version": "2.6.0"
+   "version": "2.6.1"
 }
