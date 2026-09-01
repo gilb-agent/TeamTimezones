@@ -293,18 +293,32 @@ function getEffectiveWorkHours(member) {
 }
 
 /**
- * Join a list of names into a readable phrase, capping how many are
- * spelled out so the summary line never runs on for large teams.
+ * Wrap a name in accent-colored markup so it stands out in a summary
+ * sentence — the name is the part worth a glance, the surrounding words
+ * are just grammar. Escapes the name, since it's free text a user typed.
+ * @param {string} name
+ * @returns {string}
+ */
+function accentName(name) {
+  return `<span class="accent-name">${escapeHtml(name)}</span>`;
+}
+
+/**
+ * Join a list of names into a readable, accent-highlighted phrase,
+ * capping how many are spelled out so the summary line never runs on
+ * for large teams. Returns HTML (each name escaped) — callers must set
+ * it via innerHTML, not textContent.
  * @param {string[]} names
  * @param {number} cap - Max names to spell out before switching to "and N more"
  * @returns {string}
  */
 function joinNames(names, cap = 2) {
-  if (names.length <= cap) {
-    if (names.length === 1) return names[0];
-    return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  const wrapped = names.map(accentName);
+  if (wrapped.length <= cap) {
+    if (wrapped.length === 1) return wrapped[0];
+    return `${wrapped.slice(0, -1).join(', ')} and ${wrapped[wrapped.length - 1]}`;
   }
-  const shown = names.slice(0, cap);
+  const shown = wrapped.slice(0, cap);
   const remaining = names.length - cap;
   return `${shown.join(', ')} and ${remaining} more`;
 }
@@ -316,7 +330,7 @@ function joinNames(names, cap = 2) {
  * readable sentence regardless of team size or which way it tips.
  * @param {string[]} businessNames - Names currently in business hours
  * @param {string[]} otherNames - Names currently outside business hours
- * @returns {string}
+ * @returns {string} HTML (names accent-highlighted) — set via innerHTML
  */
 function buildStatusSummary(businessNames, otherNames) {
   const total = businessNames.length + otherNames.length;
@@ -1629,7 +1643,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (statusSummaryEl) {
       const summaryText = buildStatusSummary(businessHoursNames, otherNames);
-      statusSummaryEl.textContent = summaryText;
+      statusSummaryEl.innerHTML = summaryText;
     }
     if (statusSummaryRowEl) {
       statusSummaryRowEl.classList.toggle('hidden', !memberShareParts.length);
@@ -1661,7 +1675,7 @@ document.addEventListener('DOMContentLoaded', () => {
           notSelectedNoteEl.classList.toggle('hidden', !notSelectedNames.length);
           if (notSelectedNames.length) {
             const verb = notSelectedNames.length === 1 ? 'is' : 'are';
-            notSelectedNoteEl.textContent = `${joinNames(notSelectedNames)} ${verb} not selected`;
+            notSelectedNoteEl.innerHTML = `${joinNames(notSelectedNames)} ${verb} not selected`;
           }
         }
       }

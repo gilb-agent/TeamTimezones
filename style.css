@@ -38,7 +38,8 @@
   --work-hours: #5CB85C; /* Reduced saturation ~12% */
   --night: #8E6FA3; /* Reduced saturation ~12% */
   --off-hours: #FFA726; /* Reduced saturation ~12% */
-  
+  --glow-bg: none; /* A glow reads on a dark surface, not a light one — dark theme only */
+
   /* Custom component colors - Light theme */
   --home-base-bg: #E3F2FD;
   --home-base-text: #1565C0;
@@ -186,6 +187,7 @@ body.dark-mode {
   --accent: var(--md-sys-color-primary);
   --card: var(--md-sys-color-surface-variant);
   --hover: var(--md-sys-color-secondary-container);
+  --glow-bg: radial-gradient(circle, rgba(144, 202, 249, 0.10) 0%, rgba(144, 202, 249, 0) 70%);
   --work-hours: #66BB6A;
   --night: #BA68C8;
   --off-hours: #FFB74D;
@@ -252,6 +254,7 @@ body.dark-mode {
     --accent: var(--md-sys-color-primary);
     --card: var(--md-sys-color-surface-variant);
     --hover: var(--md-sys-color-secondary-container);
+    --glow-bg: radial-gradient(circle, rgba(144, 202, 249, 0.10) 0%, rgba(144, 202, 249, 0) 70%);
     --work-hours: #66BB6A;
     --night: #BA68C8;
     --off-hours: #FFB74D;
@@ -283,7 +286,11 @@ body {
   width: 380px;
   min-height: 200px;
   max-height: 600px;
-  background: var(--md-sys-color-surface);
+  background-color: var(--md-sys-color-surface);
+  background-image: var(--glow-bg);
+  background-repeat: no-repeat;
+  background-position: top right;
+  background-size: 320px 320px;
   color: var(--md-sys-color-on-surface);
   font-family: var(--md-sys-typescale-body-medium-font);
   font-size: 12px;
@@ -1139,6 +1146,11 @@ body {
   min-width: 0;
 }
 
+.accent-name {
+  color: var(--accent);
+  font-weight: 500;
+}
+
 .summary-actions {
   display: flex;
   align-items: center;
@@ -1256,7 +1268,7 @@ body {
 .home-time {
   font-family: var(--md-sys-typescale-headline-small-font);
   font-size: 24px;
-  font-weight: 400;
+  font-weight: 500;
   line-height: 32px;
   font-variant-numeric: tabular-nums;
 }
