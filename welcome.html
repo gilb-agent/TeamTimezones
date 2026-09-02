@@ -17,6 +17,7 @@
     --on-primary-container: #0D47A1;
     --outline-variant: #CAC4D0;
     --work-hours: #5CB85C;
+    --off-hours: #E68A00;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -31,6 +32,7 @@
       --on-primary-container: #E3F2FD;
       --outline-variant: #49454F;
       --work-hours: #66BB6A;
+      --off-hours: #FFB74D;
     }
   }
   * { box-sizing: border-box; }
@@ -98,6 +100,28 @@
   .arrow-note {
     font-size: 12px; color: var(--primary); font-weight: 500; margin-top: 6px; text-align: center;
   }
+  .corner-callout {
+    position: fixed; top: 14px; right: 28px;
+    display: flex; flex-direction: column; align-items: center;
+    pointer-events: none; z-index: 10;
+  }
+  .corner-callout svg { overflow: visible; }
+  .corner-callout .arrow-path {
+    fill: none; stroke: var(--off-hours); stroke-width: 3;
+    stroke-linecap: round; stroke-linejoin: round;
+  }
+  .corner-tag {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--outline-variant);
+    border-radius: 20px; padding: 6px 14px 6px 6px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.14);
+    transform: rotate(-2deg);
+  }
+  .corner-tag img { width: 26px; height: 26px; }
+  .corner-tag span {
+    font-family: 'Comic Sans MS', 'Segoe Print', cursive, sans-serif;
+    font-size: 13px; font-weight: 700; color: var(--on-surface);
+  }
   .btn {
     display: inline-flex; align-items: center; gap: 8px;
     background: var(--primary); color: var(--on-primary);
@@ -123,6 +147,18 @@
 </style>
 </head>
 <body>
+
+<div class="corner-callout">
+  <svg width="70" height="110" viewBox="0 0 70 110">
+    <path class="arrow-path" d="M14,104 C2,74 34,68 25,40 C18,16 46,14 51,3"></path>
+    <path class="arrow-path" d="M40,7 L51,3 L54,15"></path>
+  </svg>
+  <div class="corner-tag">
+    <img src="icon.svg" alt="">
+    <span>look for me up here!</span>
+  </div>
+</div>
+
 <div class="wrap">
 
   <div class="header">
