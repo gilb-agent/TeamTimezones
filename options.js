@@ -540,31 +540,38 @@ function renderTeamList() {
             <circle cx="8" cy="16" r="1.5" fill="currentColor"/>
           </svg>
         </div>
-        <div class="team-item-fields">
-          <input
-            type="text"
-            class="team-city-input"
-            data-index="${index}"
-            value="${escapeHtml(member.name)}"
-            placeholder="City name"
-          />
-          <input
-            type="text"
-            class="team-members-input"
-            data-index="${index}"
-            placeholder="Team (optional)"
-            value="${escapeHtml(membersText)}"
-          />
-          <select class="team-tz-select" data-index="${index}">
-            ${timezoneOptions}
-          </select>
-          <select class="team-hours-select team-hours-start-select" data-index="${index}" aria-label="Business hours start for ${escapeHtml(member.name)}" title="Business hours start">
-            ${buildHourOptions(workHoursStart)}
-          </select>
-          <span class="team-hours-sep" aria-hidden="true">&ndash;</span>
-          <select class="team-hours-select team-hours-end-select" data-index="${index}" aria-label="Business hours end for ${escapeHtml(member.name)}" title="Business hours end">
-            ${buildHourOptions(workHoursEnd)}
-          </select>
+        <div class="team-item-body">
+          <div class="team-row-primary">
+            <input
+              type="text"
+              class="team-city-input"
+              data-index="${index}"
+              value="${escapeHtml(member.name)}"
+              placeholder="City name"
+            />
+            <select class="team-tz-select" data-index="${index}">
+              ${timezoneOptions}
+            </select>
+          </div>
+          <div class="team-row-secondary">
+            <input
+              type="text"
+              class="team-members-input"
+              data-index="${index}"
+              placeholder="Team (optional)"
+              value="${escapeHtml(membersText)}"
+            />
+            <div class="team-hours-group">
+              <span class="team-hours-label">Hours</span>
+              <select class="team-hours-select team-hours-start-select" data-index="${index}" aria-label="Business hours start for ${escapeHtml(member.name)}" title="Business hours start">
+                ${buildHourOptions(workHoursStart)}
+              </select>
+              <span class="team-hours-sep" aria-hidden="true">&ndash;</span>
+              <select class="team-hours-select team-hours-end-select" data-index="${index}" aria-label="Business hours end for ${escapeHtml(member.name)}" title="Business hours end">
+                ${buildHourOptions(workHoursEnd)}
+              </select>
+            </div>
+          </div>
         </div>
         <div class="team-item-actions">
           <button class="secondary-btn save-team-row" data-index="${index}">Save</button>
