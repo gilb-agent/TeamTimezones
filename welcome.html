@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Welcome to Team Timezones</title>
+<style>
+  :root {
+    --bg: #FAFAFA;
+    --surface: #FFFFFF;
+    --surface-variant: #F5F5F5;
+    --on-surface: #1C1B1F;
+    --on-surface-variant: #49454F;
+    --primary: #1565C0;
+    --on-primary: #FFFFFF;
+    --primary-container: #E3F2FD;
+    --on-primary-container: #0D47A1;
+    --outline-variant: #CAC4D0;
+    --work-hours: #5CB85C;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1C1B1F;
+      --surface: #232228;
+      --surface-variant: #2C2C2C;
+      --on-surface: #E6E1E5;
+      --on-surface-variant: #CAC4D0;
+      --primary: #90CAF9;
+      --on-primary: #0D47A1;
+      --primary-container: #1E3A5F;
+      --on-primary-container: #E3F2FD;
+      --outline-variant: #49454F;
+      --work-hours: #66BB6A;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--on-surface);
+    font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 56px 24px 80px;
+  }
+  .wrap { width: 100%; max-width: 620px; }
+  .header { text-align: center; margin-bottom: 40px; }
+  .header img { width: 72px; height: 72px; margin-bottom: 16px; }
+  h1 { font-size: 26px; font-weight: 500; margin: 0 0 8px; }
+  .subhead { font-size: 15px; color: var(--on-surface-variant); margin: 0; line-height: 1.5; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--outline-variant);
+    border-radius: 16px;
+    padding: 24px 28px;
+    margin-bottom: 20px;
+  }
+  .step-label {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 500; letter-spacing: 0.5px; text-transform: uppercase;
+    color: var(--primary); margin-bottom: 10px;
+  }
+  .step-num {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--primary); color: var(--on-primary);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700;
+  }
+  .card h2 { font-size: 17px; font-weight: 500; margin: 0 0 8px; }
+  .card p { font-size: 14px; color: var(--on-surface-variant); line-height: 1.6; margin: 0 0 16px; }
+  .illustration {
+    background: var(--surface-variant); border-radius: 12px; padding: 20px;
+    display: flex; flex-direction: column; align-items: center; gap: 4px; margin-bottom: 16px;
+  }
+  .toolbar-mock {
+    width: 100%; max-width: 320px; height: 34px; background: var(--surface);
+    border-radius: 8px; border: 1px solid var(--outline-variant);
+    display: flex; align-items: center; padding: 0 10px; gap: 8px;
+  }
+  .toolbar-mock .fake-url { flex: 1; height: 12px; background: var(--outline-variant); border-radius: 4px; opacity: 0.5; }
+  .puzzle-wrap { position: relative; }
+  .puzzle-icon { color: var(--on-surface-variant); display: flex; }
+  .dropdown-mock {
+    width: 100%; max-width: 260px; background: var(--surface);
+    border: 1px solid var(--outline-variant); border-radius: 10px;
+    padding: 6px; margin-top: 2px; box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+  }
+  .dropdown-row {
+    display: flex; align-items: center; gap: 10px; padding: 8px 8px;
+    border-radius: 8px; font-size: 13px;
+  }
+  .dropdown-row img { width: 18px; height: 18px; flex-shrink: 0; }
+  .dropdown-row span.name { flex: 1; }
+  .pin-icon {
+    display: flex; padding: 3px; border-radius: 6px;
+    background: var(--primary-container); color: var(--on-primary-container);
+  }
+  .arrow-note {
+    font-size: 12px; color: var(--primary); font-weight: 500; margin-top: 6px; text-align: center;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--primary); color: var(--on-primary);
+    border: none; border-radius: 20px; padding: 10px 20px;
+    font-family: inherit; font-size: 13px; font-weight: 500;
+    text-decoration: none; cursor: pointer;
+  }
+  .highlights { margin: 32px 0 0; }
+  .highlights h2 { font-size: 15px; font-weight: 500; margin: 0 0 14px; color: var(--on-surface-variant); }
+  .highlight-row {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 12px 0; border-top: 1px solid var(--outline-variant);
+  }
+  .highlight-row:first-of-type { border-top: none; }
+  .highlight-icon {
+    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+    background: var(--primary-container); color: var(--on-primary-container);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .highlight-text b { display: block; font-size: 14px; font-weight: 500; margin-bottom: 2px; }
+  .highlight-text span { font-size: 13px; color: var(--on-surface-variant); line-height: 1.5; }
+  .footer { text-align: center; margin-top: 40px; font-size: 13px; color: var(--on-surface-variant); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <img src="icon.svg" alt="">
+    <h1>Welcome to Team Timezones! 🎉</h1>
+    <p class="subhead">One quick step so it's actually useful, then a peek at what it can do.</p>
+  </div>
+
+  <div class="card">
+    <div class="step-label"><span class="step-num">1</span> Pin it</div>
+    <h2>Make it one click away</h2>
+    <p>Chrome tucks new extensions into a hidden menu by default — pin it to your toolbar so you'll actually glance at it.</p>
+    <div class="illustration">
+      <div class="toolbar-mock">
+        <div class="fake-url"></div>
+        <div class="puzzle-wrap">
+          <div class="puzzle-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.802-.48-.968-.925a2.501 2.501 0 1 0-3.214 3.214c.446.166.855.497.925.968a.979.979 0 0 1-.276.837l-1.61 1.61a2.404 2.404 0 0 1-1.705.707 2.402 2.402 0 0 1-1.704-.706l-1.568-1.568a1.026 1.026 0 0 0-.877-.29c-.493.074-.84.504-1.02.968a2.5 2.5 0 1 1-3.237-3.237c.464-.18.894-.527.967-1.02a1.026 1.026 0 0 0-.289-.877l-1.568-1.568A2.402 2.402 0 0 1 1.998 12c0-.617.236-1.234.706-1.704L4.23 8.77c.23-.23.556-.338.877-.29.493.074.84.504 1.02.968a2.5 2.5 0 1 0 3.237-3.237c-.464-.18-.894-.527-.967-1.02a1.026 1.026 0 0 1 .289-.877l1.568-1.568A2.402 2.402 0 0 1 12 1.998c.617 0 1.234.236 1.704.706l1.568 1.568c.23.23.338.556.29.877-.074.493-.504.84-.968 1.02a2.501 2.501 0 1 0 3.237 3.237c.18-.464.527-.894 1.02-.967a.979.979 0 0 1 .837.276Z"></path>
+            </svg>
+          </div>
+        </div>
+      </div>
+      <div class="dropdown-mock">
+        <div class="dropdown-row">
+          <img src="icons/icon16.png" alt="">
+          <span class="name">Team Timezones</span>
+          <span class="pin-icon">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="17" x2="12" y2="22"></line>
+              <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9a2 2 0 0 1-1.11-1.79V7h.5a1.5 1.5 0 0 0 0-3h-7a1.5 1.5 0 0 0 0 3h.5v3.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+            </svg>
+          </span>
+        </div>
+      </div>
+      <div class="arrow-note">↑ click the puzzle piece, then click the pin</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="step-label"><span class="step-num">2</span> Add your team</div>
+    <h2>Takes about 30 seconds</h2>
+    <p>Add each teammate's city, timezone, and business hours — you'll only do this once.</p>
+    <a class="btn" href="options.html" target="_blank">
+      Add your team
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><line x1="12" y1="5" x2="19" y2="12"></line><line x1="12" y1="19" x2="19" y2="12"></line></svg>
+    </a>
+  </div>
+
+  <div class="highlights">
+    <h2>A FEW THINGS TO TRY ONCE YOU'RE SET UP</h2>
+    <div class="highlight-row">
+      <div class="highlight-icon">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+      </div>
+      <div class="highlight-text">
+        <b>Drag the slider to check any time</b>
+        <span>See the whole team recalculate at once — great for finding a slot that works for everyone.</span>
+      </div>
+    </div>
+    <div class="highlight-row">
+      <div class="highlight-icon">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+      </div>
+      <div class="highlight-text">
+        <b>Copy times straight into Slack</b>
+        <span>One click turns the whole team's current time into a ready-to-paste message.</span>
+      </div>
+    </div>
+    <div class="highlight-row">
+      <div class="highlight-icon">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+      </div>
+      <div class="highlight-text">
+        <b>Schedule without leaving the popup</b>
+        <span>Opens a pre-filled Google Calendar or Outlook draft, already converted to everyone's local time.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">That's it — thanks for installing, and happy scheduling 🕐</div>
+
+</div>
+</body>
+</html>
