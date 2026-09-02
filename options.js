@@ -35,38 +35,24 @@ function showToast(message = 'Saved') {
   }, 2000);
 }
 
-// Auto-save with debouncing
-function autoSaveTeamMember(index) {
-  if (saveTimeout) {
-    clearTimeout(saveTimeout);
-  }
-
-  saveTimeout = setTimeout(() => {
-    saveEditedTeamMember(index, false); // false = don't show toast immediately
-    lastSavedIndex = index;
-    showToast('Saved');
-  }, CONSTANTS.DEBOUNCE_SAVE_MS);
-}
 
 // DOM elements
 const homeCityInput = document.getElementById('homeCity');
 const homeTimezoneSelect = document.getElementById('homeTimezone');
 const homeHoursStartSelect = document.getElementById('homeHoursStart');
 const homeHoursEndSelect = document.getElementById('homeHoursEnd');
-const saveHomeBtn = document.getElementById('saveHomeBtn');
+const homeTzSearch = document.getElementById('homeTzSearch');
 const newNameInput = document.getElementById('newName');
 const newMembersInput = document.getElementById('newMembers');
 const newTzSelect = document.getElementById('newTz');
+const newHoursStartSelect = document.getElementById('newHoursStart');
+const newHoursEndSelect = document.getElementById('newHoursEnd');
 const addBtn = document.getElementById('addBtn');
 const teamList = document.getElementById('teamList');
 const calendarProviderSelect = document.getElementById('calendarProviderSelect');
 const scheduleSignatureToggle = document.getElementById('scheduleSignatureToggle');
 const toast = document.getElementById('toast');
 const toastMessage = document.getElementById('toastMessage');
-
-// Auto-save debouncing
-let saveTimeout = null;
-let lastSavedIndex = null;
 
 /**
  * Initialize the options page
@@ -76,6 +62,8 @@ function init() {
   populateTimezoneSelect(newTzSelect);
   if (homeHoursStartSelect) homeHoursStartSelect.innerHTML = buildHourOptions(CONSTANTS.WORK_HOURS_START);
   if (homeHoursEndSelect) homeHoursEndSelect.innerHTML = buildHourOptions(CONSTANTS.WORK_HOURS_END);
+  if (newHoursStartSelect) newHoursStartSelect.innerHTML = buildHourOptions(CONSTANTS.WORK_HOURS_START);
+  if (newHoursEndSelect) newHoursEndSelect.innerHTML = buildHourOptions(CONSTANTS.WORK_HOURS_END);
 
   // Initialize dark mode
   let isDarkMode = null;
@@ -212,12 +200,31 @@ function init() {
   });
 
   // Event listeners
-  if (saveHomeBtn) {
-    saveHomeBtn.addEventListener('click', () => {
-      saveHomeBase(true);
+
+  // Home base autosave: text on blur, selects on change (same pattern
+  // as the team list) — Home Base is edited rarely enough that a toast
+  // per save is still a welcome confirmation rather than noise.
+  if (homeCityInput) {
+    homeCityInput.addEventListener('blur', () => saveHomeBase(true));
+  }
+  [homeTimezoneSelect, homeHoursStartSelect, homeHoursEndSelect].forEach(el => {
+    if (el) el.addEventListener('change', () => saveHomeBase(true));
+  });
+
+  // Timezone search for Home Base, mirroring the Team "add" field
+  if (homeTzSearch) {
+    homeTzSearch.addEventListener('input', (e) => {
+      filterTimezoneDropdown(e.target.value, homeTimezoneSelect);
+    });
+    homeTimezoneSelect.addEventListener('focus', () => {
+      if (homeTzSearch.value) {
+        homeTzSearch.value = '';
+        filterTimezoneDropdown('', homeTimezoneSelect);
+      }
     });
   }
-  
+
+
   if (calendarProviderSelect) {
     calendarProviderSelect.addEventListener('change', () => {
       const value = calendarProviderSelect.value; // '', 'google', or 'outlook'
@@ -371,9 +378,8 @@ function saveHomeBase(showToastFeedback = true) {
       return;
     }
 
-    // Show save success feedback
-    if (showToastFeedback && saveHomeBtn) {
-      showSaveSuccess(saveHomeBtn);
+    if (showToastFeedback) {
+      showToast('Saved');
     }
   });
 }
@@ -425,12 +431,22 @@ function addTeamMember() {
     return;
   }
 
+  const workHoursStart = newHoursStartSelect ? parseInt(newHoursStartSelect.value, 10) : CONSTANTS.WORK_HOURS_START;
+  const workHoursEnd = newHoursEndSelect ? parseInt(newHoursEndSelect.value, 10) : CONSTANTS.WORK_HOURS_END;
+
+  if (workHoursEnd <= workHoursStart) {
+    showToast('Business hours end must be after the start');
+    return;
+  }
+
   // Add new team member
   team.push({
     name: name,
     city: name,
     timezone: timezone,
     members: members,
+    workHoursStart: workHoursStart,
+    workHoursEnd: workHoursEnd,
     order: team.length
   });
 
@@ -441,6 +457,8 @@ function addTeamMember() {
   newNameInput.value = '';
   newMembersInput.value = '';
   newTzSelect.selectedIndex = 0;
+  if (newHoursStartSelect) newHoursStartSelect.value = CONSTANTS.WORK_HOURS_START;
+  if (newHoursEndSelect) newHoursEndSelect.value = CONSTANTS.WORK_HOURS_END;
   newNameInput.focus();
 
   showToast('City added successfully');
@@ -540,41 +558,39 @@ function renderTeamList() {
             <circle cx="8" cy="16" r="1.5" fill="currentColor"/>
           </svg>
         </div>
-        <div class="team-item-body">
-          <div class="team-row-primary">
-            <input
-              type="text"
-              class="team-city-input"
-              data-index="${index}"
-              value="${escapeHtml(member.name)}"
-              placeholder="City name"
-            />
-            <select class="team-tz-select" data-index="${index}">
-              ${timezoneOptions}
-            </select>
-          </div>
-          <div class="team-row-secondary">
-            <input
-              type="text"
-              class="team-members-input"
-              data-index="${index}"
-              placeholder="Team (optional)"
-              value="${escapeHtml(membersText)}"
-            />
-            <div class="team-hours-group">
-              <span class="team-hours-label">Hours</span>
-              <select class="team-hours-select team-hours-start-select" data-index="${index}" aria-label="Business hours start for ${escapeHtml(member.name)}" title="Business hours start">
-                ${buildHourOptions(workHoursStart)}
-              </select>
-              <span class="team-hours-sep" aria-hidden="true">&ndash;</span>
-              <select class="team-hours-select team-hours-end-select" data-index="${index}" aria-label="Business hours end for ${escapeHtml(member.name)}" title="Business hours end">
-                ${buildHourOptions(workHoursEnd)}
-              </select>
-            </div>
-          </div>
+        <div class="grid-field city-field">
+          <input
+            type="text"
+            class="team-city-input"
+            data-index="${index}"
+            value="${escapeHtml(member.name)}"
+            placeholder="City name"
+          />
         </div>
-        <div class="team-item-actions">
-          <button class="secondary-btn save-team-row" data-index="${index}">Save</button>
+        <div class="grid-field members-field">
+          <input
+            type="text"
+            class="team-members-input"
+            data-index="${index}"
+            placeholder="Team names"
+            value="${escapeHtml(membersText)}"
+          />
+        </div>
+        <div class="grid-field">
+          <select class="team-tz-select" data-index="${index}">
+            ${timezoneOptions}
+          </select>
+        </div>
+        <div class="grid-field hours-pair">
+          <select class="team-hours-select team-hours-start-select" data-index="${index}" aria-label="Business hours start for ${escapeHtml(member.name)}" title="Business hours start">
+            ${buildHourOptions(workHoursStart)}
+          </select>
+          <span class="hours-sep" aria-hidden="true">&ndash;</span>
+          <select class="team-hours-select team-hours-end-select" data-index="${index}" aria-label="Business hours end for ${escapeHtml(member.name)}" title="Business hours end">
+            ${buildHourOptions(workHoursEnd)}
+          </select>
+        </div>
+        <div class="remove-cell">
           <button class="remove-btn" data-index="${index}" aria-label="Remove ${escapeHtml(member.name)}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="3 6 5 6 21 6"></polyline>
@@ -588,34 +604,22 @@ function renderTeamList() {
 
   // escapeHtml is now available from shared-utils.js
 
-  // Add event listeners for save buttons
-  teamList.querySelectorAll('.save-team-row').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const orderedIndex = parseInt(btn.dataset.index, 10);
-      
-      // Get the ordered team to find the member at this position
-      const orderedTeam = [...team].sort((a, b) => {
-        const orderA = typeof a.order === 'number' ? a.order : 0;
-        const orderB = typeof b.order === 'number' ? b.order : 0;
-        return orderA - orderB;
-      });
-      
-      const memberToUpdate = orderedTeam[orderedIndex];
-      if (!memberToUpdate) return;
-      
-      // Find the actual index in the original team array
-      const actualIndex = team.findIndex(m => 
-        m.timezone === memberToUpdate.timezone && 
-        m.name === memberToUpdate.name
-      );
-      
-      if (actualIndex === -1) return;
-      
-      saveEditedTeamMember(orderedIndex, actualIndex, true);
+  // Autosave: text fields save on blur (once you've finished typing and
+  // moved on), selects save on change (they only fire on an actual pick,
+  // never mid-keystroke) — no button, no per-row toast, just quietly kept
+  // in sync. saveEditedTeamMember resolves the actual team-array index
+  // itself when only orderedIndex is given.
+  teamList.querySelectorAll('.team-city-input, .team-members-input').forEach(input => {
+    input.addEventListener('blur', () => {
+      saveEditedTeamMember(parseInt(input.dataset.index, 10), undefined, false);
     });
   });
-  
+  teamList.querySelectorAll('.team-tz-select, .team-hours-start-select, .team-hours-end-select').forEach(select => {
+    select.addEventListener('change', () => {
+      saveEditedTeamMember(parseInt(select.dataset.index, 10), undefined, false);
+    });
+  });
+
   // Add event listeners for remove buttons with confirmation
   teamList.querySelectorAll('.remove-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -724,7 +728,7 @@ function handleDragEnd(e) {
   });
 }
 
-function saveEditedTeamMember(orderedIndex, actualIndex, showToast = true) {
+function saveEditedTeamMember(orderedIndex, actualIndex, showFeedback = true) {
   // orderedIndex is the index in the rendered/sorted list (used for DOM queries)
   // actualIndex is the index in the original team array (used for updates)
   // If actualIndex is not provided, we need to find it
@@ -753,7 +757,6 @@ function saveEditedTeamMember(orderedIndex, actualIndex, showToast = true) {
   const tzSelect = teamList.querySelector(`.team-tz-select[data-index="${domIndex}"]`);
   const hoursStartSelect = teamList.querySelector(`.team-hours-start-select[data-index="${domIndex}"]`);
   const hoursEndSelect = teamList.querySelector(`.team-hours-end-select[data-index="${domIndex}"]`);
-  const saveBtn = teamList.querySelector(`.save-team-row[data-index="${domIndex}"]`);
 
   if (!cityInput || !tzSelect || teamIndex === -1 || !team[teamIndex]) {
     return;
@@ -807,61 +810,14 @@ function saveEditedTeamMember(orderedIndex, actualIndex, showToast = true) {
   team[teamIndex].workHoursEnd = workHoursEnd;
 
   saveTeam();
-  
-  // Show save success feedback before re-rendering
-  if (saveBtn && showToast) {
-    showSaveSuccess(saveBtn);
-    // Re-render after a short delay to show the feedback
-    setTimeout(() => {
-      renderTeamList();
-    }, 2100); // After the 2 second feedback
-  } else if (showToast) {
-    renderTeamList();
+
+  // No re-render here on purpose: this fires on blur/change while the
+  // user may already be tabbing into the next field, and rebuilding the
+  // list's HTML would yank focus out from under them. The DOM already
+  // reflects what was just typed — nothing needs to change visually.
+  if (showFeedback) {
+    showToast('Saved');
   }
-}
-
-function showSaveSuccess(button) {
-  if (!button) {
-    return;
-  }
-
-  const originalHTML = button.innerHTML;
-  const originalText = button.textContent.trim();
-
-  // Step 1: Show loading state
-  button.innerHTML = `
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="spinner">
-      <circle cx="12" cy="12" r="10" style="opacity: 0.25;"></circle>
-      <path d="M12 2 A10 10 0 0 1 22 12" style="opacity: 1;"></path>
-    </svg>
-    <span>Saving...</span>
-  `;
-  button.classList.add('loading');
-  button.disabled = true;
-
-  // Step 2: Show success state after loading animation
-  setTimeout(() => {
-    button.classList.remove('loading');
-    button.innerHTML = `
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="20 6 9 17 4 12"></polyline>
-      </svg>
-      <span>Saved!</span>
-    `;
-    button.classList.add('saved');
-
-    // Step 3: Reset after showing success
-    setTimeout(() => {
-      // Restore original HTML (which may include span wrapper)
-      if (originalHTML.includes('<span>')) {
-        button.innerHTML = originalHTML;
-      } else {
-        button.innerHTML = `<span>${originalText}</span>`;
-      }
-      button.classList.remove('saved');
-      button.disabled = false;
-    }, CONSTANTS.SUCCESS_DURATION_MS);
-  }, CONSTANTS.LOADING_DURATION_MS);
 }
 
 function formatHour(hour) {
