@@ -63,6 +63,12 @@
       align-items: flex-end;
       opacity: 0.85; /* Visually lighter */
       transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1);
+      /* Matches the 40px inset every Team/Home Base row has (10px row
+         padding + 20px drag-handle-width spacer + 10px gap), so the
+         Calendar section's own fields start at that same column edge.
+         Only used here, so safe to set directly rather than reaching
+         for another invisible spacer element. */
+      padding-left: 40px;
     }
     .form-group:focus-within {
       opacity: 1; /* Full opacity when focused */
@@ -283,14 +289,20 @@
       cursor: not-allowed;
     }
 
-    /* Home base row: its own 3-column layout (no Team/Action columns).
-       align-items: start, so the floating timezone suggestion list (which
-       is absolutely positioned and doesn't affect row height) never
-       nudges the other columns' labels out of line. */
+    /* Home base row: reuses the exact same --team-grid template as the
+       Team section (leading spacer + all 5 columns), leaving the Team-
+       names and Remove-button slots empty, so City/Timezone/Business
+       hours land in the identical columns Team uses below — one
+       continuous set of column edges down the whole page, not a
+       separate layout that happens to look similar.
+       align-items: start, so the floating timezone suggestion list
+       (absolutely positioned, doesn't affect row height) never nudges
+       the other columns' labels out of line. */
     .home-row {
       display: grid;
-      grid-template-columns: 1.3fr 1.6fr 150px;
+      grid-template-columns: 20px var(--team-grid);
       gap: 10px;
+      padding: 0 10px;
       align-items: start;
     }
 
@@ -646,10 +658,12 @@
     </div>
     <div class="home-base-section">
       <div class="home-row">
+        <div aria-hidden="true"></div>
         <div class="grid-field">
           <label for="homeCity">City Name</label>
           <input type="text" id="homeCity" placeholder="e.g. San Francisco">
         </div>
+        <div aria-hidden="true"></div>
         <div class="grid-field" style="position: relative;">
           <label for="homeTzSearch">Timezone</label>
           <input type="text" id="homeTzSearch" placeholder="Search timezones..." autocomplete="off">
@@ -664,6 +678,7 @@
             <select id="homeHoursEnd"></select>
           </div>
         </div>
+        <div aria-hidden="true"></div>
       </div>
       <p class="info-text">Used as the reference point for calculating times across all cities, and when suggesting a meeting time. Changes save automatically.</p>
     </div>
