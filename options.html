@@ -299,8 +299,12 @@
        as .home-row above. */
     .team-grid-row {
       display: grid;
-      grid-template-columns: var(--team-grid);
+      /* Leading 20px + padding match .team-item's drag-handle column and
+         inset exactly, so the add-row's fields line up with every row
+         below it instead of starting further left. */
+      grid-template-columns: 20px var(--team-grid);
       gap: 10px;
+      padding: 0 10px;
       align-items: start;
     }
     .add-row {
@@ -676,6 +680,7 @@
       Team
     </div>
     <div class="team-grid-row add-row">
+      <div aria-hidden="true"></div>
       <div class="grid-field">
         <label for="newName">City Name</label>
         <input type="text" id="newName" placeholder="e.g. Sydney">
