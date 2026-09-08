@@ -42,9 +42,12 @@ const homeTimezoneSelect = document.getElementById('homeTimezone');
 const homeHoursStartSelect = document.getElementById('homeHoursStart');
 const homeHoursEndSelect = document.getElementById('homeHoursEnd');
 const homeTzSearch = document.getElementById('homeTzSearch');
+const homeTzList = document.getElementById('homeTzList');
 const newNameInput = document.getElementById('newName');
 const newMembersInput = document.getElementById('newMembers');
 const newTzSelect = document.getElementById('newTz');
+const newTzSearch = document.getElementById('newTzSearch');
+const newTzList = document.getElementById('newTzList');
 const newHoursStartSelect = document.getElementById('newHoursStart');
 const newHoursEndSelect = document.getElementById('newHoursEnd');
 const addBtn = document.getElementById('addBtn');
@@ -136,6 +139,7 @@ function init() {
         homeBase = result.homeBase;
         homeCityInput.value = homeBase.city || '';
         homeTimezoneSelect.value = homeBase.timezone || '';
+        if (homeTzSearch) homeTzSearch.value = getTimezoneLabel(homeTimezoneSelect.value);
         if (homeHoursStartSelect && typeof homeBase.workHoursStart === 'number') {
           homeHoursStartSelect.value = homeBase.workHoursStart;
         }
@@ -159,6 +163,7 @@ function init() {
         };
         homeCityInput.value = homeBase.city;
         homeTimezoneSelect.value = homeBase.timezone;
+        if (homeTzSearch) homeTzSearch.value = getTimezoneLabel(homeTimezoneSelect.value);
         saveHomeBase(false); // Don't show toast for auto-save
       } catch (e) {
         console.error('Failed to set default home base:', e);
@@ -169,6 +174,7 @@ function init() {
         };
         homeCityInput.value = 'UTC';
         homeTimezoneSelect.value = 'UTC';
+        if (homeTzSearch) homeTzSearch.value = getTimezoneLabel('UTC');
       }
     }
     
@@ -211,18 +217,8 @@ function init() {
     if (el) el.addEventListener('change', () => saveHomeBase(true));
   });
 
-  // Timezone search for Home Base, mirroring the Team "add" field
-  if (homeTzSearch) {
-    homeTzSearch.addEventListener('input', (e) => {
-      filterTimezoneDropdown(e.target.value, homeTimezoneSelect);
-    });
-    homeTimezoneSelect.addEventListener('focus', () => {
-      if (homeTzSearch.value) {
-        homeTzSearch.value = '';
-        filterTimezoneDropdown('', homeTimezoneSelect);
-      }
-    });
-  }
+  // Timezone combobox for Home Base, mirroring the Team "add" field
+  initTimezoneCombo({ input: homeTzSearch, hiddenSelect: homeTimezoneSelect, listEl: homeTzList });
 
 
   if (calendarProviderSelect) {
@@ -257,21 +253,8 @@ function init() {
     if (e.key === 'Enter') addTeamMember();
   });
 
-  // Timezone search functionality
-  const newTzSearch = document.getElementById('newTzSearch');
-  if (newTzSearch) {
-    newTzSearch.addEventListener('input', (e) => {
-      filterTimezoneDropdown(e.target.value, newTzSelect);
-    });
-
-    // Clear search when dropdown is focused
-    newTzSelect.addEventListener('focus', () => {
-      if (newTzSearch.value) {
-        newTzSearch.value = '';
-        filterTimezoneDropdown('', newTzSelect);
-      }
-    });
-  }
+  // Timezone combobox for the Team "add" field
+  initTimezoneCombo({ input: newTzSearch, hiddenSelect: newTzSelect, listEl: newTzList });
 
   // Star rating functionality
   initStarRating();
@@ -289,50 +272,124 @@ function populateTimezoneSelect(select) {
   });
 }
 
-function filterTimezoneDropdown(searchQuery, select) {
-  try {
-    // Validate inputs
-    if (!select || !(select instanceof HTMLSelectElement)) {
-      console.error('Invalid select element in filterTimezoneDropdown');
-      return;
-    }
+/**
+ * Friendly label for a timezone value, for display in a combobox input.
+ * Falls back to a name derived from the IANA string itself (e.g. for a
+ * previously-saved value, like 'UTC', that isn't in COMMON_TIMEZONES).
+ * @param {string} tzValue
+ * @returns {string}
+ */
+function getTimezoneLabel(tzValue) {
+  const known = COMMON_TIMEZONES.find(tz => tz.value === tzValue);
+  if (known) return known.label;
+  return tzValue ? getCityNameFromTimezone(tzValue) : '';
+}
 
-    const query = searchQuery.toLowerCase().trim();
+/**
+ * Wire up a timezone combobox: one visible text input that both searches
+ * and displays the current value, backed by a hidden <select> that the
+ * rest of options.js reads/writes via .value exactly as before.
+ * @param {{input: HTMLInputElement, hiddenSelect: HTMLSelectElement, listEl: HTMLElement}} refs
+ */
+function initTimezoneCombo({ input, hiddenSelect, listEl }) {
+  if (!input || !hiddenSelect || !listEl) return;
 
-    // If search is empty, show all timezones
-    if (!query) {
-      populateTimezoneSelect(select);
-      return;
-    }
+  let highlightedIndex = -1;
+  let currentMatches = [];
 
-    // Filter timezones based on search query
-    const filtered = COMMON_TIMEZONES.filter(tz => {
-      if (!tz || !tz.label || !tz.value) return false;
-      return tz.label.toLowerCase().includes(query) ||
-             tz.value.toLowerCase().includes(query);
-    });
+  function renderList(query) {
+    const trimmed = query.toLowerCase().trim();
+    currentMatches = trimmed
+      ? COMMON_TIMEZONES.filter(tz =>
+          tz.label.toLowerCase().includes(trimmed) || tz.value.toLowerCase().includes(trimmed))
+      : COMMON_TIMEZONES;
+    highlightedIndex = -1;
 
-    // Update dropdown with filtered results
-    select.innerHTML = '';
-
-    if (filtered.length === 0) {
-      const option = document.createElement('option');
-      option.textContent = 'No matches found - try a different search';
-      option.disabled = true;
-      select.appendChild(option);
+    if (!currentMatches.length) {
+      listEl.innerHTML = '<div class="tz-combo-empty">No matches</div>';
     } else {
-      filtered.forEach(tz => {
-        const option = document.createElement('option');
-        option.value = tz.value;
-        option.textContent = tz.label;
-        select.appendChild(option);
-      });
+      listEl.innerHTML = currentMatches.map((tz, i) =>
+        `<div class="tz-combo-option" role="option" data-index="${i}">${escapeHtml(tz.label)}</div>`
+      ).join('');
     }
-  } catch (error) {
-    console.error('Error filtering timezone dropdown:', error);
-    // Fallback to showing all timezones
-    populateTimezoneSelect(select);
+    listEl.classList.remove('hidden');
   }
+
+  function updateHighlight() {
+    listEl.querySelectorAll('.tz-combo-option').forEach((el, i) => {
+      el.classList.toggle('highlighted', i === highlightedIndex);
+    });
+  }
+
+  function pick(tz) {
+    hiddenSelect.value = tz.value;
+    input.value = tz.label;
+    listEl.classList.add('hidden');
+    // Existing autosave/change handlers on hiddenSelect keep working unchanged
+    hiddenSelect.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function closeAndRevert() {
+    listEl.classList.add('hidden');
+    // Typed text that was never actually picked shouldn't linger — revert
+    // to whatever the hidden select's real (last confirmed) value is.
+    const confirmedLabel = getTimezoneLabel(hiddenSelect.value);
+    if (input.value !== confirmedLabel) {
+      input.value = confirmedLabel;
+    }
+  }
+
+  input.addEventListener('focus', () => {
+    input.select();
+    renderList('');
+  });
+
+  input.addEventListener('input', () => {
+    renderList(input.value);
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (listEl.classList.contains('hidden') && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      renderList(input.value);
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (currentMatches.length) {
+        highlightedIndex = (highlightedIndex + 1) % currentMatches.length;
+        updateHighlight();
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (currentMatches.length) {
+        highlightedIndex = (highlightedIndex - 1 + currentMatches.length) % currentMatches.length;
+        updateHighlight();
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const tz = currentMatches[highlightedIndex] || currentMatches[0];
+      if (tz) pick(tz);
+    } else if (e.key === 'Escape') {
+      closeAndRevert();
+      input.blur();
+    }
+  });
+
+  // Click delegation for the option list
+  listEl.addEventListener('mousedown', (e) => {
+    // mousedown (not click) fires before the input's blur, so the pick
+    // still has a valid list to read from closeAndRevert's perspective
+    const option = e.target.closest('.tz-combo-option');
+    if (!option) return;
+    e.preventDefault();
+    const tz = currentMatches[parseInt(option.dataset.index, 10)];
+    if (tz) pick(tz);
+  });
+
+  input.addEventListener('blur', () => {
+    // Delay so the list's mousedown handler above still gets to run first
+    setTimeout(closeAndRevert, 150);
+  });
 }
 
 function saveHomeBase(showToastFeedback = true) {
@@ -457,6 +514,7 @@ function addTeamMember() {
   newNameInput.value = '';
   newMembersInput.value = '';
   newTzSelect.selectedIndex = 0;
+  if (newTzSearch) newTzSearch.value = getTimezoneLabel(newTzSelect.value);
   if (newHoursStartSelect) newHoursStartSelect.value = CONSTANTS.WORK_HOURS_START;
   if (newHoursEndSelect) newHoursEndSelect.value = CONSTANTS.WORK_HOURS_END;
   newNameInput.focus();

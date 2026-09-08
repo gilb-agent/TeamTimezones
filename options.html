@@ -9,11 +9,11 @@
     :root {
       /* Shared column widths so the "add" row and every existing row
          line up exactly: City / Team / Timezone / Hours / Action */
-      --team-grid: 1.4fr 0.6fr 2fr 130px 44px;
+      --team-grid: 1.1fr 1.2fr 1.6fr 140px 40px;
     }
     body {
       width: 100%;
-      max-width: 700px;
+      max-width: 920px;
       margin: 0 auto;
       padding: 16px 24px;
       background: var(--md-sys-color-surface); /* Neutral app background - matches popup */
@@ -201,6 +201,51 @@
       border-width: 2px;
       padding: 0 11px;
     }
+    /* Timezone combobox: one visible text field (search + current value in
+       one control) backed by a hidden <select> that everything else in
+       options.js still reads/writes via .value, plus a floating list of
+       matches. Replaces the old stacked search-input-above-select, which
+       made the Timezone column taller than its row neighbors. */
+    .tz-combo-hidden-select {
+      display: none;
+    }
+    .tz-combo-list {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      z-index: 10;
+      max-height: 240px;
+      overflow-y: auto;
+      background: var(--md-sys-color-surface);
+      border: 1px solid var(--md-sys-color-outline-variant);
+      border-radius: 8px;
+      box-shadow: var(--md-sys-elevation-level3);
+      padding: 4px;
+    }
+    .tz-combo-list.hidden {
+      display: none;
+    }
+    .tz-combo-option {
+      padding: 8px 10px;
+      font-size: 13px;
+      color: var(--md-sys-color-on-surface);
+      border-radius: 6px;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tz-combo-option:hover,
+    .tz-combo-option.highlighted {
+      background: var(--md-sys-color-surface-variant);
+    }
+    .tz-combo-empty {
+      padding: 8px 10px;
+      font-size: 12px;
+      color: var(--md-sys-color-on-surface-variant);
+      opacity: 0.7;
+    }
     .hours-pair {
       display: grid;
       grid-template-columns: 1fr auto 1fr;
@@ -239,11 +284,9 @@
     }
 
     /* Home base row: its own 3-column layout (no Team/Action columns).
-       align-items: start (not end) — the Timezone column is taller than
-       the others (label + search + select), and end-alignment was
-       pushing the shorter columns' labels down to compensate, which
-       looked uneven. Starting all columns at the same top edge instead
-       means the extra height just extends downward, harmlessly. */
+       align-items: start, so the floating timezone suggestion list (which
+       is absolutely positioned and doesn't affect row height) never
+       nudges the other columns' labels out of line. */
     .home-row {
       display: grid;
       grid-template-columns: 1.3fr 1.6fr 150px;
@@ -605,8 +648,9 @@
         </div>
         <div class="grid-field" style="position: relative;">
           <label for="homeTzSearch">Timezone</label>
-          <input type="text" id="homeTzSearch" placeholder="Search timezones..." style="margin-bottom: 4px;">
-          <select id="homeTimezone" size="1"></select>
+          <input type="text" id="homeTzSearch" placeholder="Search timezones..." autocomplete="off">
+          <select id="homeTimezone" class="tz-combo-hidden-select" aria-hidden="true" tabindex="-1"></select>
+          <div id="homeTzList" class="tz-combo-list hidden" role="listbox"></div>
         </div>
         <div class="grid-field">
           <label for="homeHoursStart">Business hours</label>
@@ -642,8 +686,9 @@
       </div>
       <div class="grid-field" style="position: relative;">
         <label for="newTzSearch">Timezone</label>
-        <input type="text" id="newTzSearch" placeholder="Search timezones..." style="margin-bottom: 4px;">
-        <select id="newTz" size="1"></select>
+        <input type="text" id="newTzSearch" placeholder="Search timezones..." autocomplete="off">
+        <select id="newTz" class="tz-combo-hidden-select" aria-hidden="true" tabindex="-1"></select>
+        <div id="newTzList" class="tz-combo-list hidden" role="listbox"></div>
       </div>
       <div class="grid-field">
         <label for="newHoursStart">Business hours</label>
