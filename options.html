@@ -446,6 +446,11 @@
       color: var(--md-sys-color-on-surface-variant);
       margin-top: 6px; /* Reduced from 8px */
       opacity: 0.65; /* Lower visual contrast */
+      /* Matches the 40px field inset above it (Home Base's row / Calendar's
+         form-group) — without this, the caption jumps back out to the
+         section edge while the field it's describing sits indented,
+         which reads as a stray misalignment rather than a deliberate one. */
+      padding-left: 40px;
     }
     .quick-times-list {
       display: flex;
