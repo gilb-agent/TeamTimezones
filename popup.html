@@ -9,7 +9,7 @@
 <body>
   <div class="wrap">
     <header class="header">
-      <div id="normalHeader" class="header-top">
+      <div class="header-top">
         <a href="https://chromewebstore.google.com/detail/makileokchiliacehpmkecgcehebflbb?utm_source=item-share-cb" target="_blank" rel="noopener noreferrer" class="title">Team Time</a>
         <div class="header-controls">
           <div class="header-toggles">
@@ -42,26 +42,13 @@
               <span class="toggle-label">24</span>
             </div>
           </div>
-          <div class="header-icon-group">
-            <button id="selectModeBtn" class="icon-btn" type="button" title="Select cities" aria-label="Select cities">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10.5"></circle>
-                <polyline points="7.5 12.5 10.5 15.5 16.5 8.5"></polyline>
-              </svg>
-            </button>
-            <button id="settingsBtn" class="icon-btn" title="Settings" aria-label="Open settings">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-              </svg>
-            </button>
-          </div>
+          <button id="settingsBtn" class="icon-btn" title="Settings" aria-label="Open settings">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </button>
         </div>
-      </div>
-      <div id="selectModeHeader" class="select-mode-header hidden">
-        <button id="cancelSelectBtn" class="text-link-btn" type="button">Cancel</button>
-        <span id="selectedCount" class="selected-count">0 selected</span>
-        <button id="doneSelectBtn" class="text-link-btn" type="button">Done</button>
       </div>
     </header>
 
@@ -127,6 +114,8 @@
       </div>
     </div>
 
+    <div id="groupSwitcher" class="group-switcher hidden"></div>
+
     <div id="list" class="list">
       <div class="empty-state">
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity: 0.5; margin-bottom: 16px;">
@@ -144,10 +133,6 @@
         </button>
         <p style="font-size: 11px; margin-top: 12px; opacity: 0.6;">💡 Tip: Try starting with New York, London, or Tokyo</p>
       </div>
-    </div>
-
-    <div id="selectionFooter" class="selection-footer hidden">
-      <span id="notSelectedNote" class="not-selected-note hidden" role="button" tabindex="0"></span>
     </div>
   </div>
   <script src="constants.js"></script>

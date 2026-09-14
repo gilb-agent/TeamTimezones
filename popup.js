@@ -404,16 +404,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const scheduleBtnEl = document.getElementById('scheduleBtn');
   const scheduleMenuEl = document.getElementById('scheduleMenu');
 
-  // Selection: a sticky subset of cities that scopes the summary/copy line
-  // and unlocks "Suggest a time". Selection mode itself is a pure picker.
-  const normalHeaderEl = document.getElementById('normalHeader');
-  const selectModeHeaderEl = document.getElementById('selectModeHeader');
-  const selectModeBtn = document.getElementById('selectModeBtn');
-  const cancelSelectBtn = document.getElementById('cancelSelectBtn');
-  const doneSelectBtn = document.getElementById('doneSelectBtn');
-  const selectedCountEl = document.getElementById('selectedCount');
-  const selectionFooterEl = document.getElementById('selectionFooter');
-  const notSelectedNoteEl = document.getElementById('notSelectedNote');
+  // Groups: named, saved subsets of the team, switched between from the
+  // chip row above the list.
+  const groupSwitcherEl = document.getElementById('groupSwitcher');
 
   // Slider DOM references
   const timeSlider = document.getElementById('timeSlider');
@@ -445,9 +438,9 @@ document.addEventListener('DOMContentLoaded', () => {
   let scheduleSignatureEnabled = true; // Credit line in the invite description; opt-out in Settings
   let currentScheduleDate = null; // The moment currently shown, used as the event start
   let currentScheduleLines = []; // "8:02 AM in New York" style lines, one per line, for the event description
-  let selectionMode = false; // Actively picking (checkboxes showing)
   let selectedTimezones = new Set(); // Committed/sticky selection, persisted to storage
-  let pendingSelection = new Set(); // Working copy edited while selectionMode is on
+  let groups = []; // Saved, named subsets of the team ({id, name, timezones}), configured in Settings
+  let activeGroupId = null; // Which saved group is switched on in the popup; null = Everyone
   // Toggle settings
   let isDarkMode = null; // null = use system preference, true/false = override
   let use24HourFormat = false; // 24-hour time format (false = 12-hour)
@@ -455,7 +448,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let focusedRowIndex = null; // Currently focused row index (null = no focus, -1 = home base focus)
 
   // Load data with error handling
-  chrome.storage.sync.get(['team', 'homeBase', 'quickTimes', 'isDarkMode', 'use24HourFormat', 'calendarProvider', 'scheduleSignatureEnabled'], (result) => {
+  chrome.storage.sync.get(['team', 'homeBase', 'quickTimes', 'isDarkMode', 'use24HourFormat', 'calendarProvider', 'scheduleSignatureEnabled', 'groups'], (result) => {
     // Check for Chrome runtime errors
     if (chrome.runtime.lastError) {
       console.error('Storage error:', chrome.runtime.lastError);
@@ -540,6 +533,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Default on — undefined (never set) is treated as enabled
     scheduleSignatureEnabled = result.scheduleSignatureEnabled !== false;
 
+    if (result.groups && Array.isArray(result.groups)) {
+      groups = result.groups;
+    }
+
     // Initialize toggles
     initializeToggles(result);
     applyDarkMode();
@@ -547,10 +544,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load the sticky city selection (if any) before the first render, so
     // the summary/copy scope to it from the start rather than flashing
     // "everyone" first.
-    chrome.storage.local.get(['selectedTimezones'], (localResult) => {
+    chrome.storage.local.get(['selectedTimezones', 'activeGroupId'], (localResult) => {
       if (!chrome.runtime.lastError && Array.isArray(localResult.selectedTimezones)) {
         selectedTimezones = new Set(localResult.selectedTimezones);
         reconcileSelection(team);
+      }
+      // A saved group, if one's active, is the source of truth for the
+      // scope — it overrides whatever ad-hoc selection was left over.
+      if (!chrome.runtime.lastError && localResult.activeGroupId) {
+        const activeGroup = groups.find(g => g.id === localResult.activeGroupId);
+        if (activeGroup) {
+          activeGroupId = activeGroup.id;
+          selectedTimezones = new Set(activeGroup.timezones);
+        }
       }
       render();
     });
@@ -663,6 +669,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (changes.scheduleSignatureEnabled !== undefined) {
       scheduleSignatureEnabled = changes.scheduleSignatureEnabled.newValue !== false;
+    }
+    if (changes.groups) {
+      groups = changes.groups.newValue || [];
+      if (activeGroupId) {
+        const stillExists = groups.find(g => g.id === activeGroupId);
+        if (stillExists) {
+          selectedTimezones = new Set(stillExists.timezones);
+        } else {
+          // The active group got deleted out from under us — fall back
+          // to Everyone rather than keep filtering by a group that no
+          // longer exists.
+          activeGroupId = null;
+          selectedTimezones = new Set();
+        }
+      }
+      render();
     }
   });
 
@@ -779,78 +801,55 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  /** Refresh the "N selected" label while actively picking. */
-  function updateSelectionUI() {
-    if (selectedCountEl) {
-      selectedCountEl.textContent = `${pendingSelection.size} selected`;
-    }
+  /**
+   * Switch which saved group (or "Everyone") is currently active. A group
+   * is just a named, saved preset for the exact same selectedTimezones
+   * the summary/copy/schedule already scope off of.
+   * @param {string|null} groupId - null selects "Everyone"
+   */
+  function switchGroup(groupId) {
+    const group = groupId ? groups.find(g => g.id === groupId) : null;
+    activeGroupId = group ? group.id : null;
+    selectedTimezones = group ? new Set(group.timezones) : new Set();
+    chrome.storage.local.set({ activeGroupId, selectedTimezones: [...selectedTimezones] }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('Failed to save active group:', chrome.runtime.lastError);
+      }
+    });
+    render();
   }
 
   /**
-   * Open the picker. Pre-checks whatever's currently selected, so
-   * reopening to tweak a selection doesn't lose it, and Cancel can
-   * discard changes without touching the committed selection.
+   * The chip row above the list: "Everyone", then each saved group, then
+   * a "+" that jumps to Settings to make one. Always shown (once there's
+   * a team to filter) — Everyone and + are the entry point to the
+   * feature itself, not something to unlock by already knowing it
+   * exists.
    */
-  function enterSelectionMode() {
-    if (!team.length) return;
-    selectionMode = true;
-    pendingSelection = new Set(selectedTimezones);
-    // Collapse any expanded row/slider — the picker replaces it
-    expandedIndex = null;
-    if (isCustomMode) {
-      isCustomMode = false;
-      customControls.classList.add('hidden');
-      homeBaseEl.classList.remove('expanded');
-      customDate = new Date();
-    }
-    normalHeaderEl.classList.add('hidden');
-    selectModeHeaderEl.classList.remove('hidden');
-    updateSelectionUI();
-    render();
-  }
+  function renderGroupSwitcher() {
+    if (!groupSwitcherEl) return;
 
-  function closeSelectionMode() {
-    selectionMode = false;
-    normalHeaderEl.classList.remove('hidden');
-    selectModeHeaderEl.classList.add('hidden');
-    render();
-  }
-
-  /** Discard any changes made while picking; the committed selection stands. */
-  function cancelSelection() {
-    pendingSelection = new Set();
-    closeSelectionMode();
-  }
-
-  /** Commit the picker's choices as the new sticky selection. */
-  function commitSelection() {
-    selectedTimezones = new Set(pendingSelection);
-    pendingSelection = new Set();
-    chrome.storage.local.set({ selectedTimezones: [...selectedTimezones] }, () => {
-      if (chrome.runtime.lastError) {
-        console.error('Failed to save selection:', chrome.runtime.lastError);
-      }
+    groupSwitcherEl.classList.remove('hidden');
+    const isEveryone = !activeGroupId && !selectedTimezones.size;
+    const chips = [
+      `<button type="button" class="group-chip ${isEveryone ? 'active' : ''}" data-group-id="">Everyone</button>`
+    ];
+    groups.forEach(group => {
+      chips.push(`<button type="button" class="group-chip ${activeGroupId === group.id ? 'active' : ''}" data-group-id="${escapeHtml(group.id)}" title="${escapeHtml(group.name)}">${escapeHtml(group.name)}</button>`);
     });
-    closeSelectionMode();
+    chips.push('<button type="button" class="group-switcher-add" aria-label="Manage groups" title="Manage groups">+</button>');
+    groupSwitcherEl.innerHTML = chips.join('');
   }
 
-  if (selectModeBtn) {
-    selectModeBtn.addEventListener('click', enterSelectionMode);
-  }
-  if (cancelSelectBtn) {
-    cancelSelectBtn.addEventListener('click', cancelSelection);
-  }
-  if (doneSelectBtn) {
-    doneSelectBtn.addEventListener('click', commitSelection);
-  }
-
-  if (notSelectedNoteEl) {
-    notSelectedNoteEl.addEventListener('click', enterSelectionMode);
-    notSelectedNoteEl.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        enterSelectionMode();
+  if (groupSwitcherEl) {
+    groupSwitcherEl.addEventListener('click', (e) => {
+      if (e.target.closest('.group-switcher-add')) {
+        chrome.tabs.create({ url: chrome.runtime.getURL('options.html#groupsSection') });
+        return;
       }
+      const chip = e.target.closest('.group-chip');
+      if (!chip) return;
+      switchGroup(chip.dataset.groupId || null);
     });
   }
 
@@ -995,7 +994,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // silently gets stuck on a row that isn't there.
     const visibleIndices = sortedTeam
       .map((m, i) => ({ m, i }))
-      .filter(({ m }) => selectionMode || !selectedTimezones.size || selectedTimezones.has(m.timezone))
+      .filter(({ m }) => !selectedTimezones.size || selectedTimezones.has(m.timezone))
       .map(({ i }) => i);
 
     switch(e.key) {
@@ -1073,12 +1072,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
       case 'Escape':
         e.preventDefault();
-        // If the selection picker is open, Escape backs out of it the same
-        // way Cancel does — same as every other open panel in this popup.
-        if (selectionMode) {
-          cancelSelection();
-          break;
-        }
         // Clear focus and collapse any expanded rows
         focusedRowIndex = null;
         if (expandedIndex !== null) {
@@ -1391,8 +1384,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showEmptyState();
         homeBaseEl.classList.add('hidden');
         if (statusSummaryRowEl) statusSummaryRowEl.classList.add('hidden');
-        if (selectionFooterEl) selectionFooterEl.classList.add('hidden');
-        if (selectModeBtn) selectModeBtn.disabled = true;
+        if (groupSwitcherEl) groupSwitcherEl.classList.add('hidden');
         currentScheduleDate = null;
         currentScheduleLines = [];
         isRendering = false;
@@ -1432,7 +1424,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // Show home base
-    if (selectModeBtn) selectModeBtn.disabled = false;
     let homeSharePart = '';
     if (homeBase) {
       homeBaseEl.classList.remove('hidden');
@@ -1534,10 +1525,9 @@ document.addEventListener('DOMContentLoaded', () => {
         memberShareParts.push(`${timeString} in ${member.name || member.city}`);
       }
 
-      // While actively picking, every row must stay visible so it can be
-      // checked/unchecked. Otherwise, an active selection hides the rest.
-      const isRowVisible = selectionMode || isIncludedInSummary;
-      
+      // An active selection hides everyone not in it.
+      const isRowVisible = isIncludedInSummary;
+
       // Calculate offset from home base (use baseDate for offset calculation)
       const offsetStr = getOffsetFromHomeBase(baseDate, member.timezone);
       
@@ -1571,11 +1561,9 @@ document.addEventListener('DOMContentLoaded', () => {
       
       if (!isRowVisible) return;
 
-      const isChecked = pendingSelection.has(member.timezone);
       html += `
-        <div class="row ${statusClass} ${selectionMode ? 'selection-mode' : (isExpanded ? 'expanded clickable' : 'clickable')} ${focusClass}" data-timezone="${escapeHtml(member.timezone)}" data-index="${index}" tabindex="${isFocused ? '0' : '-1'}">
+        <div class="row ${statusClass} ${isExpanded ? 'expanded clickable' : 'clickable'} ${focusClass}" data-timezone="${escapeHtml(member.timezone)}" data-index="${index}" tabindex="${isFocused ? '0' : '-1'}">
           ${holidayName ? '<span class="holiday-tooltip">' + escapeHtml(holidayName) + '</span>' : ''}
-          ${selectionMode ? `<input type="checkbox" class="row-select-checkbox" data-timezone="${escapeHtml(member.timezone)}" aria-label="Select ${escapeHtml(member.name)}" ${isChecked ? 'checked' : ''}>` : ''}
           <div class="person">
             <span class="name">${escapeHtml(member.name)}${holidayIndicator}</span>
             <span class="sub">${escapeHtml(namesLine)}</span>
@@ -1661,25 +1649,7 @@ document.addEventListener('DOMContentLoaded', () => {
         : 'Copy times as a message';
     }
 
-    // Sticky-selection footer: only exists at all once a selection is set.
-    if (selectionFooterEl) {
-      const hasSelection = selectedTimezones.size > 0 && !selectionMode;
-      selectionFooterEl.classList.toggle('hidden', !hasSelection);
-
-      if (hasSelection) {
-        const notSelectedNames = team
-          .filter(m => !selectedTimezones.has(m.timezone))
-          .map(m => m.name || m.city);
-
-        if (notSelectedNoteEl) {
-          notSelectedNoteEl.classList.toggle('hidden', !notSelectedNames.length);
-          if (notSelectedNames.length) {
-            const verb = notSelectedNames.length === 1 ? 'is' : 'are';
-            notSelectedNoteEl.innerHTML = `${joinNames(notSelectedNames)} ${verb} not selected`;
-          }
-        }
-      }
-    }
+    renderGroupSwitcher();
 
     // Prevent clicks on holiday indicator from triggering row expansion
     listEl.querySelectorAll('.holiday-indicator').forEach(indicator => {
@@ -1698,38 +1668,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Create a single click handler for all rows
     listEl._rowClickHandler = (e) => {
-      // In selection mode, a row click toggles that city instead of
-      // expanding it — handled entirely separately from the normal flow.
-      const selectionRow = e.target.closest('.row.selection-mode');
-      if (selectionRow) {
-        const timezone = selectionRow.dataset.timezone;
-        if (!timezone) return;
-        const checkbox = selectionRow.querySelector('.row-select-checkbox');
-
-        if (e.target === checkbox) {
-          // The checkbox already toggled itself natively — just sync our
-          // state to it. Calling preventDefault() here would make the
-          // browser revert the native toggle, which is what caused
-          // clicks to silently not register.
-          if (checkbox.checked) {
-            pendingSelection.add(timezone);
-          } else {
-            pendingSelection.delete(timezone);
-          }
-        } else {
-          // Clicked elsewhere on the row — toggle manually.
-          e.preventDefault();
-          if (pendingSelection.has(timezone)) {
-            pendingSelection.delete(timezone);
-          } else {
-            pendingSelection.add(timezone);
-          }
-          if (checkbox) checkbox.checked = pendingSelection.has(timezone);
-        }
-        updateSelectionUI();
-        return;
-      }
-
       // Don't trigger if clicking on inputs/buttons inside slider controls
       if (e.target.closest('.city-slider-controls')) return;
       if (isRendering) return; // Prevent concurrent actions
