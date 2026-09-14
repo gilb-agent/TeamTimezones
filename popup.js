@@ -2133,11 +2133,27 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!homeBase) {
       return getOffsetString(timezone);
     }
-    
+
     try {
-      const homeHour = getHourInTimezone(date, homeBase.timezone);
-      const tzHour = getHourInTimezone(date, timezone);
-      
+      // Minute-level precision, not just the hour: a handful of timezones
+      // (India, Nepal, parts of Australia/Canada) sit on a half- or
+      // 45-minute offset, and truncating to whole hours previously made
+      // those rows show a diff that was up to an hour off.
+      const getWallClockMinutes = (tz) => {
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: false
+        }).formatToParts(date);
+        const hour = parseInt(parts.find(p => p.type === 'hour').value, 10) % 24;
+        const minute = parseInt(parts.find(p => p.type === 'minute').value, 10);
+        return hour * 60 + minute;
+      };
+
+      const homeMinutes = getWallClockMinutes(homeBase.timezone);
+      const tzMinutes = getWallClockMinutes(timezone);
+
       // Get date strings in both timezones to check if it's tomorrow
       const homeDateStr = new Intl.DateTimeFormat('en-CA', {
         timeZone: homeBase.timezone,
@@ -2145,36 +2161,39 @@ document.addEventListener('DOMContentLoaded', () => {
         month: '2-digit',
         day: '2-digit'
       }).format(date);
-      
+
       const tzDateStr = new Intl.DateTimeFormat('en-CA', {
         timeZone: timezone,
         year: 'numeric',
         month: '2-digit',
         day: '2-digit'
       }).format(date);
-      
+
       // Parse dates for comparison
       const [homeYear, homeMonth, homeDay] = homeDateStr.split('-').map(Number);
       const [tzYear, tzMonth, tzDay] = tzDateStr.split('-').map(Number);
       const homeDate = new Date(homeYear, homeMonth - 1, homeDay);
       const tzDate = new Date(tzYear, tzMonth - 1, tzDay);
-      
+
       // Check if target timezone is tomorrow
       const tomorrow = new Date(homeDate);
       tomorrow.setDate(tomorrow.getDate() + 1);
       const isTomorrow = tzDate.getTime() === tomorrow.getTime();
-      
-      let diff = tzHour - homeHour;
-      
+
+      let diffMinutes = tzMinutes - homeMinutes;
+
       // Handle day boundaries
-      if (diff > 12) diff -= 24;
-      if (diff < -12) diff += 24;
-      
-      if (diff === 0) return 'Same time';
-      
-      const sign = diff > 0 ? '+' : '';
-      const offsetStr = `${sign}${diff}h`;
-      
+      if (diffMinutes > 12 * 60) diffMinutes -= 24 * 60;
+      if (diffMinutes < -12 * 60) diffMinutes += 24 * 60;
+
+      if (diffMinutes === 0) return 'Same time';
+
+      const sign = diffMinutes > 0 ? '+' : '-';
+      const absMinutes = Math.abs(diffMinutes);
+      const hours = Math.floor(absMinutes / 60);
+      const minutes = absMinutes % 60;
+      const offsetStr = minutes === 0 ? `${sign}${hours}h` : `${sign}${hours}h ${minutes}m`;
+
       // Append "tomorrow" if the date is tomorrow
       return isTomorrow ? `${offsetStr} tomorrow` : offsetStr;
     } catch (e) {
