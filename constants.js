@@ -31,6 +31,9 @@ const CONSTANTS = {
 
   // Calendar scheduling
   SCHEDULE_EVENT_DURATION_MINUTES: 30, // Default length of a scheduled meeting
+
+  // Groups
+  MAX_GROUPS: 20, // Reasonable limit on saved groups
   CHROME_WEB_STORE_URL: 'https://chromewebstore.google.com/detail/makileokchiliacehpmkecgcehebflbb',
 
   // Work hours definition

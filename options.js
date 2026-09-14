@@ -19,6 +19,8 @@ const PREDEFINED_CITIES = [
 let team = [];
 let homeBase = null;
 let draggedIndex = null;
+let groups = [];
+let newGroupSelection = new Set(); // Timezones toggled on in the not-yet-saved "add group" picker
 
 // Status-based color logic removed - Settings stays neutral
 // Color coding belongs only in popup.js
@@ -54,6 +56,10 @@ const addBtn = document.getElementById('addBtn');
 const teamList = document.getElementById('teamList');
 const calendarProviderSelect = document.getElementById('calendarProviderSelect');
 const scheduleSignatureToggle = document.getElementById('scheduleSignatureToggle');
+const newGroupNameInput = document.getElementById('newGroupName');
+const addGroupBtn = document.getElementById('addGroupBtn');
+const newGroupChipsEl = document.getElementById('newGroupChips');
+const groupsListEl = document.getElementById('groupsList');
 const toast = document.getElementById('toast');
 const toastMessage = document.getElementById('toastMessage');
 
@@ -89,7 +95,7 @@ function init() {
   }
   
   // Load saved data with error handling
-  chrome.storage.sync.get(['team', 'homeBase', 'isDarkMode', 'calendarProvider', 'scheduleSignatureEnabled'], (result) => {
+  chrome.storage.sync.get(['team', 'homeBase', 'isDarkMode', 'calendarProvider', 'scheduleSignatureEnabled', 'groups'], (result) => {
     // Check for Chrome runtime errors
     if (chrome.runtime.lastError) {
       console.error('Storage error:', chrome.runtime.lastError);
@@ -201,8 +207,20 @@ function init() {
         applyDarkMode();
       }
     });
-    
+
+    if (result.groups && Array.isArray(result.groups)) {
+      groups = result.groups.filter(g => g && typeof g === 'object' && g.id && g.name && Array.isArray(g.timezones));
+    }
+
     renderTeamList();
+    renderGroups();
+
+    // Deep-linked from the popup's "+" chip — land right where you'd
+    // start typing instead of just the top of a long settings page.
+    if (window.location.hash === '#groupsSection' && newGroupNameInput) {
+      document.getElementById('groupsSection')?.scrollIntoView({ block: 'start' });
+      newGroupNameInput.focus();
+    }
   });
 
   // Event listeners
@@ -255,6 +273,29 @@ function init() {
 
   // Timezone combobox for the Team "add" field
   initTimezoneCombo({ input: newTzSearch, hiddenSelect: newTzSelect, listEl: newTzList });
+
+  if (newGroupNameInput) {
+    newGroupNameInput.addEventListener('input', updateAddGroupButtonState);
+    newGroupNameInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') addGroup();
+    });
+  }
+  if (addGroupBtn) {
+    addGroupBtn.addEventListener('click', addGroup);
+  }
+  if (newGroupChipsEl) {
+    newGroupChipsEl.addEventListener('click', (e) => {
+      const chip = e.target.closest('.group-chip');
+      if (!chip) return;
+      const timezone = chip.dataset.timezone;
+      if (newGroupSelection.has(timezone)) {
+        newGroupSelection.delete(timezone);
+      } else {
+        newGroupSelection.add(timezone);
+      }
+      renderNewGroupChips();
+    });
+  }
 
   // Star rating functionality
   initStarRating();
@@ -509,6 +550,7 @@ function addTeamMember() {
 
   saveTeam();
   renderTeamList();
+  renderGroups();
 
   // Clear inputs
   newNameInput.value = '';
@@ -526,6 +568,7 @@ function removeTeamMember(index) {
   team.splice(index, 1);
   saveTeam();
   renderTeamList();
+  renderGroups();
   showToast('Removed');
 }
 
@@ -560,6 +603,202 @@ function saveTeam() {
       console.error('Failed to save team:', chrome.runtime.lastError);
       showToast('Failed to save. Please try again.');
     }
+  });
+}
+
+/**
+ * The label a team member's chip shows, in either picker. Not everyone
+ * fills in real names for a city — some rows are just a place with no one
+ * named — so this prefers actual person names when given and falls back
+ * to the city label otherwise, the same rule the popup itself already
+ * uses to decide what to call a row.
+ * @param {Object} member
+ * @returns {string}
+ */
+function getMemberChipLabel(member) {
+  if (member.members && member.members.length) {
+    return member.members.join(', ');
+  }
+  return member.name || member.city || '';
+}
+
+function updateAddGroupButtonState() {
+  if (!addGroupBtn) return;
+  const hasName = newGroupNameInput && newGroupNameInput.value.trim().length > 0;
+  addGroupBtn.disabled = !hasName || newGroupSelection.size === 0;
+}
+
+/** The "Include" chip picker for the not-yet-saved new group. */
+function renderNewGroupChips() {
+  if (!newGroupChipsEl) return;
+
+  if (!team.length) {
+    newGroupChipsEl.innerHTML = '<span style="font-size: 12px; color: var(--md-sys-color-on-surface-variant); opacity: 0.7;">Add team members above first.</span>';
+    updateAddGroupButtonState();
+    return;
+  }
+
+  newGroupChipsEl.innerHTML = team.map(member => {
+    const active = newGroupSelection.has(member.timezone);
+    return `<button type="button" class="group-chip ${active ? 'active' : ''}" data-timezone="${escapeHtml(member.timezone)}">${escapeHtml(getMemberChipLabel(member))}</button>`;
+  }).join('');
+
+  updateAddGroupButtonState();
+}
+
+function addGroup() {
+  if (!newGroupNameInput) return;
+  const name = newGroupNameInput.value.trim();
+
+  if (!name) {
+    showToast('Give the group a name');
+    return;
+  }
+  if (name.length > 40) {
+    showToast('Group name is too long (max 40 characters)');
+    return;
+  }
+  if (!newGroupSelection.size) {
+    showToast('Select at least one team member');
+    return;
+  }
+  if (groups.length >= CONSTANTS.MAX_GROUPS) {
+    showToast(`Maximum of ${CONSTANTS.MAX_GROUPS} groups allowed`);
+    return;
+  }
+
+  groups.push({
+    id: `g_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+    name,
+    timezones: [...newGroupSelection]
+  });
+  saveGroups();
+
+  newGroupNameInput.value = '';
+  newGroupSelection = new Set();
+  renderGroups();
+  newGroupNameInput.focus();
+
+  showToast('Group added');
+}
+
+function saveGroups() {
+  if (!Array.isArray(groups)) {
+    console.error('Invalid groups data: not an array');
+    return;
+  }
+
+  const dataSize = getStorageSize({ groups });
+  if (dataSize > CONSTANTS.MAX_SYNC_STORAGE_BYTES) {
+    showToast('Groups are too large. Please remove some.');
+    return;
+  }
+
+  chrome.storage.sync.set({ groups }, () => {
+    if (chrome.runtime.lastError) {
+      console.error('Failed to save groups:', chrome.runtime.lastError);
+      showToast('Failed to save. Please try again.');
+    }
+  });
+}
+
+function renameGroup(groupId, newName) {
+  const group = groups.find(g => g.id === groupId);
+  if (!group) return;
+
+  const trimmed = newName.trim();
+  if (!trimmed) {
+    renderGroups(); // Nothing valid typed — revert the input to the saved name
+    return;
+  }
+  if (trimmed.length > 40) {
+    showToast('Group name is too long (max 40 characters)');
+    renderGroups();
+    return;
+  }
+  if (trimmed === group.name) return;
+
+  group.name = trimmed;
+  saveGroups();
+  showToast('Saved');
+}
+
+/** Toggle one member in/out of a saved group — no separate edit mode, the
+ *  chip itself is always live, matching how the rest of Settings autosaves
+ *  in place rather than requiring a Save step. */
+function toggleGroupMember(groupId, timezone) {
+  const group = groups.find(g => g.id === groupId);
+  if (!group) return;
+
+  const index = group.timezones.indexOf(timezone);
+  if (index === -1) {
+    group.timezones.push(timezone);
+  } else {
+    group.timezones.splice(index, 1);
+  }
+  saveGroups();
+  renderGroups();
+}
+
+function removeGroup(groupId) {
+  groups = groups.filter(g => g.id !== groupId);
+  saveGroups();
+  renderGroups();
+  showToast('Removed');
+}
+
+/**
+ * The saved-groups list, plus the add-row's chip picker (both depend on
+ * the current team, so they're re-rendered together).
+ */
+function renderGroups() {
+  renderNewGroupChips();
+
+  if (!groupsListEl) return;
+
+  if (!groups.length) {
+    groupsListEl.innerHTML = `
+      <div class="empty-groups">
+        <p>No groups yet.</p>
+        <p>Group your team by region, project, or who you schedule with most — then switch between them from the popup with one tap.</p>
+      </div>
+    `;
+    return;
+  }
+
+  groupsListEl.innerHTML = groups.map(group => {
+    const chips = team.map(member => {
+      const active = group.timezones.includes(member.timezone);
+      return `<button type="button" class="group-chip ${active ? 'active' : ''}" data-group-id="${escapeHtml(group.id)}" data-timezone="${escapeHtml(member.timezone)}">${escapeHtml(getMemberChipLabel(member))}</button>`;
+    }).join('');
+
+    return `
+      <div class="group-item">
+        <input type="text" class="group-name-input" value="${escapeHtml(group.name)}" data-id="${escapeHtml(group.id)}" aria-label="Group name">
+        <div class="group-chip-picker">${chips}</div>
+        <button class="remove-btn" data-id="${escapeHtml(group.id)}" aria-label="Delete ${escapeHtml(group.name)}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+        </button>
+      </div>
+    `;
+  }).join('');
+
+  groupsListEl.querySelectorAll('.group-name-input').forEach(input => {
+    input.addEventListener('blur', () => renameGroup(input.dataset.id, input.value));
+    input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') input.blur();
+    });
+  });
+
+  groupsListEl.querySelectorAll('.group-item .group-chip').forEach(chip => {
+    chip.addEventListener('click', () => toggleGroupMember(chip.dataset.groupId, chip.dataset.timezone));
+  });
+
+  groupsListEl.querySelectorAll('.remove-btn').forEach(btn => {
+    btn.addEventListener('click', () => removeGroup(btn.dataset.id));
   });
 }
 
@@ -777,6 +1016,7 @@ function handleDrop(e) {
   team = orderedTeam;
   saveTeam();
   renderTeamList();
+  renderGroups();
 }
 
 function handleDragEnd(e) {
@@ -869,10 +1109,13 @@ function saveEditedTeamMember(orderedIndex, actualIndex, showFeedback = true) {
 
   saveTeam();
 
-  // No re-render here on purpose: this fires on blur/change while the
-  // user may already be tabbing into the next field, and rebuilding the
-  // list's HTML would yank focus out from under them. The DOM already
-  // reflects what was just typed — nothing needs to change visually.
+  // No renderTeamList() here on purpose: this fires on blur/change while
+  // the user may already be tabbing into the next field, and rebuilding
+  // the list's HTML would yank focus out from under them. renderGroups()
+  // is safe though — it only touches the separate Groups card below, and
+  // a renamed member's chip label needs to catch up with it.
+  renderGroups();
+
   if (showFeedback) {
     showToast('Saved');
   }

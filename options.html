@@ -739,6 +739,37 @@
     </div>
   </div>
 
+  <div class="section" id="groupsSection">
+    <div class="section-title">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.24L3 3l-.24 6.59a2 2 0 0 0 .59 1.41l9.58 9.58a2 2 0 0 0 2.83 0l4.6-4.6a2 2 0 0 0 0-2.83z"></path>
+        <circle cx="7.5" cy="7.5" r="1.4" fill="currentColor" stroke="none"></circle>
+      </svg>
+      Groups
+    </div>
+    <div class="form-group" style="padding-left: 0; align-items: flex-end;">
+      <div class="form-field" style="flex: 1;">
+        <label for="newGroupName">Group name</label>
+        <input type="text" id="newGroupName" placeholder="e.g. APAC" maxlength="40">
+      </div>
+      <div class="form-field" style="flex: 0 0 90px;">
+        <label>&nbsp;</label>
+        <button id="addGroupBtn" class="btn-add" disabled>Add</button>
+      </div>
+    </div>
+    <div style="margin-bottom: 14px;">
+      <label style="display: block; margin-bottom: 6px;">Include</label>
+      <div id="newGroupChips" class="group-chip-picker"></div>
+    </div>
+    <div id="groupsList" class="groups-list">
+      <div class="empty-groups">
+        <p>No groups yet.</p>
+        <p>Group your team by region, project, or who you schedule with most — then switch between them from the popup with one tap.</p>
+      </div>
+    </div>
+    <p class="info-text" style="padding-left: 0;">Switch between groups from the popup with one tap — it scopes who counts toward the summary, copy message, and calendar invite. Changes here save automatically.</p>
+  </div>
+
   <div class="section">
     <div class="section-title">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
