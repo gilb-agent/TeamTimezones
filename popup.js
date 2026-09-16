@@ -293,6 +293,43 @@ function getEffectiveWorkHours(member) {
 }
 
 /**
+ * Build the CSS gradient for a time slider's track: night/work-hours/
+ * off-hours bands across the 24-hour range, in the exact same colors
+ * every row's left border already uses. Classifies every hour the same
+ * way the row list does, then collapses that into contiguous bands, so
+ * it comes out correct regardless of how work hours are configured
+ * (including edge cases like work hours overlapping the fixed night
+ * window) rather than assuming a fixed hour ordering.
+ * @param {number} workHoursStart
+ * @param {number} workHoursEnd
+ * @returns {string} a linear-gradient() value
+ */
+function buildTrackGradient(workHoursStart, workHoursEnd) {
+  const colorForHour = (hour) => {
+    if (hour >= CONSTANTS.NIGHT_HOURS_START || hour < CONSTANTS.NIGHT_HOURS_END) return 'var(--night)';
+    if (hour >= workHoursStart && hour < workHoursEnd) return 'var(--work-hours)';
+    return 'var(--off-hours)';
+  };
+
+  const stops = [];
+  let bandColor = colorForHour(0);
+  let bandStartHour = 0;
+
+  for (let hour = 1; hour <= 24; hour++) {
+    const color = hour < 24 ? colorForHour(hour) : null;
+    if (color !== bandColor) {
+      const startPct = (bandStartHour / 24) * 100;
+      const endPct = (hour / 24) * 100;
+      stops.push(`${bandColor} ${startPct}%`, `${bandColor} ${endPct}%`);
+      bandColor = color;
+      bandStartHour = hour;
+    }
+  }
+
+  return `linear-gradient(to right, ${stops.join(', ')})`;
+}
+
+/**
  * Wrap a name in accent-colored markup so it stands out in a summary
  * sentence — the name is the part worth a glance, the surrounding words
  * are just grammar. Escapes the name, since it's free text a user typed.
@@ -392,6 +429,61 @@ function formatDateShort(date) {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(date);
 }
 
+// This timezone's UTC offset, in minutes, at the given instant.
+function getUtcOffsetMinutes(timeZone, date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  }).formatToParts(date).reduce((acc, part) => {
+    acc[part.type] = part.value;
+    return acc;
+  }, {});
+  const asUTC = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour) % 24, // some locales report midnight as "24"
+    Number(parts.minute),
+    Number(parts.second)
+  );
+  return Math.round((asUTC - date.getTime()) / 60000);
+}
+
+// Binary-searches the window between fromDate and toDate for the exact
+// instant the UTC-offset gap between two timezones changes (a DST
+// transition on either side, or both). Returns null if the gap doesn't
+// change across the whole window.
+function findOffsetGapTransition(zoneA, zoneB, fromDate, toDate) {
+  const gapAt = (date) => getUtcOffsetMinutes(zoneA, date) - getUtcOffsetMinutes(zoneB, date);
+  const startGap = gapAt(fromDate);
+  if (gapAt(toDate) === startGap) return null;
+
+  let lo = fromDate.getTime();
+  let hi = toDate.getTime();
+  while (hi - lo > 60000) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (gapAt(new Date(mid)) === startGap) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  return new Date(hi);
+}
+
+// Looks 2 weeks ahead for a DST transition (on either side) that will
+// change a member's offset relative to home base, so an upcoming
+// scheduling drift doesn't come as a surprise the day it happens. Kept
+// short deliberately: the indicator should only show up when it's about
+// to actually matter, not sit around for weeks as background noise.
+const DST_LOOKAHEAD_DAYS = 14;
+
 document.addEventListener('DOMContentLoaded', () => {
   const listEl = document.getElementById('list');
   const customControls = document.getElementById('customControls');
@@ -408,6 +500,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // chip row above the list.
   const groupSwitcherEl = document.getElementById('groupSwitcher');
 
+  // Quick team filter: hidden until "/" is pressed.
+  const teamFilterWrapEl = document.getElementById('teamFilterWrap');
+  const teamFilterInputEl = document.getElementById('teamFilterInput');
+  const teamFilterClearBtnEl = document.getElementById('teamFilterClearBtn');
+
   // Slider DOM references
   const timeSlider = document.getElementById('timeSlider');
   const sliderTimeDisplay = document.getElementById('sliderTimeDisplay');
@@ -417,6 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const increaseTimeBtn = document.getElementById('increaseTimeBtn');
   const sliderDatePicker = document.getElementById('sliderDatePicker');
   const datePickerLabel = document.getElementById('datePickerLabel');
+  const sliderTrackBg = document.getElementById('sliderTrackBg');
   
   let team = [];
   let homeBase = null;
@@ -441,11 +539,75 @@ document.addEventListener('DOMContentLoaded', () => {
   let selectedTimezones = new Set(); // Committed/sticky selection, persisted to storage
   let groups = []; // Saved, named subsets of the team ({id, name, timezones}), configured in Settings
   let activeGroupId = null; // Which saved group is switched on in the popup; null = Everyone
+  let teamFilterQuery = ''; // Lowercased "/" filter text; not persisted, resets each time the popup opens
   // Toggle settings
   let isDarkMode = null; // null = use system preference, true/false = override
   let use24HourFormat = false; // 24-hour time format (false = 12-hour)
   // Keyboard navigation
   let focusedRowIndex = null; // Currently focused row index (null = no focus, -1 = home base focus)
+
+  // The team, ordered the same way everywhere it's used: pinned members
+  // first (a quick, popup-native favorite that doesn't require opening
+  // Settings), then Settings' own manual drag order if set, then by UTC
+  // offset. render() and the keyboard-navigation handlers below all read
+  // this same order, so a focused/expanded row index always points at the
+  // same member in both places.
+  function getSortedTeam(baseDateForOffset) {
+    return [...team].sort((a, b) => {
+      const pinnedA = !!a.pinned;
+      const pinnedB = !!b.pinned;
+      if (pinnedA !== pinnedB) return pinnedA ? -1 : 1;
+
+      const hasOrderA = typeof a.order === 'number';
+      const hasOrderB = typeof b.order === 'number';
+      if (hasOrderA && hasOrderB) return a.order - b.order;
+      if (hasOrderA) return -1;
+      if (hasOrderB) return 1;
+
+      const offsetA = getTimezoneOffset(baseDateForOffset, a.timezone);
+      const offsetB = getTimezoneOffset(baseDateForOffset, b.timezone);
+      return offsetA - offsetB;
+    });
+  }
+
+  function togglePinned(timezone) {
+    const member = team.find(m => m.timezone === timezone);
+    if (!member) return;
+    member.pinned = !member.pinned;
+    chrome.storage.sync.set({ team }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('Failed to save pinned state:', chrome.runtime.lastError);
+      }
+    });
+    render();
+  }
+
+  // Whether a member matches the current "/" filter text. Purely a
+  // find-a-row aid — unlike a Group's selectedTimezones, it never changes
+  // the business-hours summary or the copy-message text.
+  function rowMatchesFilter(member) {
+    if (!teamFilterQuery) return true;
+    const haystack = [member.name, member.city, ...(member.members || [])]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return haystack.includes(teamFilterQuery);
+  }
+
+  function openTeamFilter() {
+    if (!teamFilterWrapEl || !teamFilterInputEl) return;
+    teamFilterWrapEl.classList.remove('hidden');
+    teamFilterInputEl.focus();
+  }
+
+  function closeTeamFilter(clear) {
+    if (clear) {
+      teamFilterQuery = '';
+      if (teamFilterInputEl) teamFilterInputEl.value = '';
+    }
+    if (teamFilterWrapEl) teamFilterWrapEl.classList.add('hidden');
+    render();
+  }
 
   // Load data with error handling
   chrome.storage.sync.get(['team', 'homeBase', 'quickTimes', 'isDarkMode', 'use24HourFormat', 'calendarProvider', 'scheduleSignatureEnabled', 'groups'], (result) => {
@@ -853,6 +1015,39 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  if (teamFilterInputEl) {
+    teamFilterInputEl.addEventListener('input', () => {
+      teamFilterQuery = teamFilterInputEl.value.trim().toLowerCase();
+      render();
+    });
+    teamFilterInputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeTeamFilter(true);
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        // Jump keyboard focus to the first match so Arrow keys / Enter
+        // can take over from here, same as a command-palette "jump to".
+        const sortedTeam = getSortedTeam(isCustomMode ? customDate : new Date());
+        const firstMatch = sortedTeam.findIndex(m =>
+          (!selectedTimezones.size || selectedTimezones.has(m.timezone)) && rowMatchesFilter(m)
+        );
+        if (firstMatch !== -1) {
+          focusedRowIndex = firstMatch;
+          teamFilterInputEl.blur();
+          updateKeyboardFocus();
+        }
+      }
+    });
+  }
+
+  if (teamFilterClearBtnEl) {
+    teamFilterClearBtnEl.addEventListener('click', () => closeTeamFilter(true));
+  }
+
   // Toggle custom time picker when clicking on home base
   homeBaseEl.addEventListener('click', () => {
     if (homeBaseEl.classList.contains('hidden') || isRendering) return;
@@ -937,17 +1132,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Check if a city slider is open
       if (expandedIndex !== null && expandedIndex >= 0 && expandedIndex < team.length) {
         e.preventDefault();
-        const sortedTeam = [...team].sort((a, b) => {
-          const hasOrderA = typeof a.order === 'number';
-          const hasOrderB = typeof b.order === 'number';
-          if (hasOrderA && hasOrderB) return a.order - b.order;
-          if (hasOrderA) return -1;
-          if (hasOrderB) return 1;
-          const baseDate = isCustomMode ? customDate : new Date();
-          const offsetA = getTimezoneOffset(baseDate, a.timezone);
-          const offsetB = getTimezoneOffset(baseDate, b.timezone);
-          return offsetA - offsetB;
-        });
+        const sortedTeam = getSortedTeam(isCustomMode ? customDate : new Date());
 
         const expandedMember = sortedTeam[expandedIndex];
         if (expandedMember) {
@@ -977,17 +1162,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     
-    const sortedTeam = [...team].sort((a, b) => {
-      const hasOrderA = typeof a.order === 'number';
-      const hasOrderB = typeof b.order === 'number';
-      if (hasOrderA && hasOrderB) return a.order - b.order;
-      if (hasOrderA) return -1;
-      if (hasOrderB) return 1;
-      const baseDate = isCustomMode ? customDate : new Date();
-      const offsetA = getTimezoneOffset(baseDate, a.timezone);
-      const offsetB = getTimezoneOffset(baseDate, b.timezone);
-      return offsetA - offsetB;
-    });
+    const sortedTeam = getSortedTeam(isCustomMode ? customDate : new Date());
 
     // Only indices that actually have a rendered row right now — a sticky
     // selection hides the rest, and focus must skip over them too, or it
@@ -1072,6 +1247,12 @@ document.addEventListener('DOMContentLoaded', () => {
         
       case 'Escape':
         e.preventDefault();
+        // A visible filter takes priority: first Escape closes that,
+        // a second one (now that it's closed) collapses sliders/focus.
+        if (teamFilterWrapEl && !teamFilterWrapEl.classList.contains('hidden')) {
+          closeTeamFilter(true);
+          break;
+        }
         // Clear focus and collapse any expanded rows
         focusedRowIndex = null;
         if (expandedIndex !== null) {
@@ -1085,6 +1266,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         updateKeyboardFocus();
         render();
+        break;
+
+      case '/':
+        e.preventDefault();
+        openTeamFilter();
+        break;
+
+      default:
+        // Digit keys switch groups: 0 = Everyone, 1-9 = that group in
+        // Settings' order (same order the chip row shows them in).
+        if (/^[0-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          const digit = parseInt(e.key, 10);
+          if (digit === 0) {
+            switchGroup(null);
+          } else if (groups[digit - 1]) {
+            switchGroup(groups[digit - 1].id);
+          }
+        }
         break;
     }
   }
@@ -1190,6 +1390,15 @@ document.addEventListener('DOMContentLoaded', () => {
     datePickerLabel.addEventListener('click', (e) => {
       e.stopPropagation();
       sliderDatePicker.showPicker();
+    });
+    // role="button" doesn't get native Enter/Space activation for free —
+    // wire it up now that it's not a real <label for> anymore.
+    datePickerLabel.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        e.stopPropagation();
+        sliderDatePicker.showPicker();
+      }
     });
   }
 
@@ -1385,6 +1594,7 @@ document.addEventListener('DOMContentLoaded', () => {
         homeBaseEl.classList.add('hidden');
         if (statusSummaryRowEl) statusSummaryRowEl.classList.add('hidden');
         if (groupSwitcherEl) groupSwitcherEl.classList.add('hidden');
+        if (teamFilterWrapEl) teamFilterWrapEl.classList.add('hidden');
         currentScheduleDate = null;
         currentScheduleLines = [];
         isRendering = false;
@@ -1393,21 +1603,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Calculate base date and sort team
     let baseDate = isCustomMode ? customDate : new Date();
-    const sortedTeam = [...team].sort((a, b) => {
-      const hasOrderA = typeof a.order === 'number';
-      const hasOrderB = typeof b.order === 'number';
+    const sortedTeam = getSortedTeam(baseDate);
 
-      if (hasOrderA && hasOrderB) {
-        return a.order - b.order;
-      }
-      if (hasOrderA) return -1;
-      if (hasOrderB) return 1;
-
-      const offsetA = getTimezoneOffset(baseDate, a.timezone);
-      const offsetB = getTimezoneOffset(baseDate, b.timezone);
-      return offsetA - offsetB;
-    });
-    
     // Check if expanded city has a custom date set (get timezone from expanded index)
     // When a city is expanded and has a custom date, use it as the base date
     // This allows city-specific time adjustments to affect all other cities
@@ -1429,6 +1626,10 @@ document.addEventListener('DOMContentLoaded', () => {
       homeBaseEl.classList.remove('hidden');
       const homeTime = formatTime(baseDate, homeBase.timezone);
       homeTimeEl.textContent = homeTime;
+      if (sliderTrackBg) {
+        const { start: homeWorkStart, end: homeWorkEnd } = getEffectiveWorkHours(homeBase);
+        sliderTrackBg.style.background = buildTrackGradient(homeWorkStart, homeWorkEnd);
+      }
       const homeCityEl = document.getElementById('homeCity');
       if (homeCityEl) {
         // Use stored city name, or derive from timezone if missing
@@ -1525,12 +1726,33 @@ document.addEventListener('DOMContentLoaded', () => {
         memberShareParts.push(`${timeString} in ${member.name || member.city}`);
       }
 
-      // An active selection hides everyone not in it.
-      const isRowVisible = isIncludedInSummary;
+      // An active selection hides everyone not in it. The "/" filter is
+      // separate and purely visual — it never touches the summary/copy
+      // text above, only which rows are drawn.
+      const isRowVisible = isIncludedInSummary && rowMatchesFilter(member);
 
       // Calculate offset from home base (use baseDate for offset calculation)
       const offsetStr = getOffsetFromHomeBase(baseDate, member.timezone);
-      
+
+      const dstShift = getDstShiftInfo(member);
+      const dstIndicator = dstShift
+        ? '<span class="dst-indicator" data-dst="' + escapeHtml(dstShift.message) + '">↻</span>'
+        : '';
+
+      // Pinning is a lightweight, popup-native favorite: no need to open
+      // Settings just to bump 1-2 cities above the rest. Sort order lives
+      // in getSortedTeam(); this is just the toggle button. Invisible
+      // until the row is hovered (or it's already pinned), matching the
+      // rest of the app's thin-line icon language instead of adding a
+      // bold shape every row carries all the time.
+      const isPinned = !!member.pinned;
+      const pinBtn = `<button type="button" class="pin-btn${isPinned ? ' pinned' : ''}" data-timezone="${escapeHtml(member.timezone)}" aria-label="${isPinned ? 'Unpin' : 'Pin to top'} ${escapeHtml(member.name)}" title="${isPinned ? 'Unpin' : 'Pin to top'}">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="${isPinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 21c-3.6-3.6-6-6.7-6-10a6 6 0 0 1 12 0c0 3.3-2.4 6.4-6 10z"></path>
+          <circle cx="12" cy="11" r="2"></circle>
+        </svg>
+      </button>`;
+
       // Team member names, if any were given. member.city is set from the
       // same free-text field as member.name today, so falling back to it
       // here would just repeat the name — only show it if it's ever
@@ -1564,13 +1786,14 @@ document.addEventListener('DOMContentLoaded', () => {
       html += `
         <div class="row ${statusClass} ${isExpanded ? 'expanded clickable' : 'clickable'} ${focusClass}" data-timezone="${escapeHtml(member.timezone)}" data-index="${index}" tabindex="${isFocused ? '0' : '-1'}">
           ${holidayName ? '<span class="holiday-tooltip">' + escapeHtml(holidayName) + '</span>' : ''}
+          ${dstShift ? '<span class="dst-tooltip">' + escapeHtml(dstShift.message) + '</span>' : ''}
           <div class="person">
-            <span class="name">${escapeHtml(member.name)}${holidayIndicator}</span>
+            <span class="name">${pinBtn}${escapeHtml(member.name)}${holidayIndicator}</span>
             <span class="sub">${escapeHtml(namesLine)}</span>
           </div>
           <div class="time-data">
             <div class="time">${timeString}</div>
-            <div class="diff">${offsetStr}</div>
+            <div class="diff">${offsetStr}${dstIndicator}</div>
           </div>
         </div>
         ${isExpanded ? (() => {
@@ -1583,12 +1806,12 @@ document.addEventListener('DOMContentLoaded', () => {
           }).format(rowDate);
           const [tzHours, tzMinutes] = tzTimeStr.split(':').map(Number);
           const totalMinutes = tzHours * 60 + tzMinutes;
-          
+
           // Format date label
           const today = new Date();
           const isToday = rowDate.toDateString() === today.toDateString();
           const dateLabel = isToday ? 'Today' : formatDateShort(rowDate);
-          
+
           // Get date string for date picker
           const dateStr = new Intl.DateTimeFormat('en-CA', {
             timeZone: member.timezone,
@@ -1596,7 +1819,10 @@ document.addEventListener('DOMContentLoaded', () => {
             month: '2-digit',
             day: '2-digit'
           }).format(rowDate);
-          
+
+          const { start: memberWorkStart, end: memberWorkEnd } = getEffectiveWorkHours(member);
+          const trackGradient = buildTrackGradient(memberWorkStart, memberWorkEnd);
+
           return `
         <div class="city-slider-controls ${statusClass}" data-timezone="${escapeHtml(member.timezone)}">
           <div class="slider-time-label">Set Time in <span>${escapeHtml(member.city || member.name)}</span></div>
@@ -1606,7 +1832,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 <line x1="5" y1="12" x2="19" y2="12"></line>
               </svg>
             </button>
-            <input type="range" class="time-slider city-time-slider" data-timezone="${escapeHtml(member.timezone)}" min="0" max="1440" step="30" value="${totalMinutes}">
+            <div class="slider-track-container">
+              <div class="slider-track-row">
+                <div class="slider-track-bg" style="background: ${trackGradient}"></div>
+                <input type="range" class="time-slider city-time-slider" data-timezone="${escapeHtml(member.timezone)}" min="0" max="1440" step="30" value="${totalMinutes}">
+              </div>
+              <div class="slider-track-labels" aria-hidden="true">
+                <span>12 AM</span>
+                <span>12 PM</span>
+                <span>12 AM</span>
+              </div>
+            </div>
             <button class="slider-btn city-increase-btn" data-timezone="${escapeHtml(member.timezone)}" aria-label="Increase time">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -1617,8 +1853,8 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="slider-time-display">
             <div class="slider-current-time city-slider-display" data-timezone="${escapeHtml(member.timezone)}">${formatSliderTime(tzHours, tzMinutes)}</div>
             <div class="slider-date-control">
-              <input type="date" class="slider-date-picker city-date-picker" data-timezone="${escapeHtml(member.timezone)}" value="${dateStr}">
-              <label class="date-picker-link city-date-picker-label" data-timezone="${escapeHtml(member.timezone)}">${dateLabel} ›</label>
+              <input type="date" class="slider-date-picker city-date-picker" data-timezone="${escapeHtml(member.timezone)}" value="${dateStr}" tabindex="-1" aria-hidden="true">
+              <label class="date-picker-link city-date-picker-label" data-timezone="${escapeHtml(member.timezone)}" role="button" tabindex="0">${dateLabel} ›</label>
             </div>
           </div>
         </div>
@@ -1626,6 +1862,14 @@ document.addEventListener('DOMContentLoaded', () => {
         })() : ''}
       `;
     });
+
+    if (!html && teamFilterQuery) {
+      html = `
+        <div class="empty-state">
+          <p style="margin: 24px 0 0; font-size: 13px;">No matches for "${escapeHtml(teamFilterInputEl ? teamFilterInputEl.value : teamFilterQuery)}"</p>
+        </div>
+      `;
+    }
 
     listEl.innerHTML = html;
 
@@ -1660,7 +1904,29 @@ document.addEventListener('DOMContentLoaded', () => {
         e.stopPropagation();
       });
     });
-    
+
+    // Same for the DST-shift indicator
+    listEl.querySelectorAll('.dst-indicator').forEach(indicator => {
+      indicator.addEventListener('click', (e) => {
+        e.stopPropagation();
+      });
+      indicator.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+      });
+    });
+
+    // Pin button toggles pinned state instead of expanding the row
+    listEl.querySelectorAll('.pin-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        togglePinned(btn.dataset.timezone);
+      });
+      btn.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+      });
+    });
+
     // Use event delegation - remove existing handler if present
     if (listEl._rowClickHandler) {
       listEl.removeEventListener('click', listEl._rowClickHandler);
@@ -1743,6 +2009,7 @@ document.addEventListener('DOMContentLoaded', () => {
       listEl.removeEventListener('input', listEl._sliderHandler);
       listEl.removeEventListener('change', listEl._sliderHandler);
       listEl.removeEventListener('click', listEl._sliderHandler);
+      listEl.removeEventListener('keydown', listEl._sliderHandler);
     }
     
     listEl._sliderHandler = (e) => {
@@ -1813,8 +2080,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
-      // Handle date picker label click
+      // Handle date picker label click (or Enter/Space — role="button" on
+      // a <label> gets no native key activation, unlike a real <button>)
       if (e.target.closest('.city-date-picker-label')) {
+        if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+        if (e.type === 'keydown') e.preventDefault();
         e.stopPropagation();
         const label = e.target.closest('.city-date-picker-label');
         const picker = listEl.querySelector(`.city-date-picker[data-timezone="${label.dataset.timezone}"]`);
@@ -1849,6 +2119,7 @@ document.addEventListener('DOMContentLoaded', () => {
     listEl.addEventListener('input', listEl._sliderHandler);
     listEl.addEventListener('change', listEl._sliderHandler);
     listEl.addEventListener('click', listEl._sliderHandler);
+    listEl.addEventListener('keydown', listEl._sliderHandler);
     
     // Track which slider is being dragged for mouseup/touchend
     listEl._mousedownHandler = (e) => {
@@ -2136,6 +2407,28 @@ document.addEventListener('DOMContentLoaded', () => {
       return isTomorrow ? `${offsetStr} tomorrow` : offsetStr;
     } catch (e) {
       return '';
+    }
+  }
+
+  function getDstShiftInfo(member) {
+    if (!homeBase) return null;
+    try {
+      const now = new Date();
+      const later = new Date(now.getTime() + DST_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000);
+      const transitionDate = findOffsetGapTransition(member.timezone, homeBase.timezone, now, later);
+      if (!transitionDate) return null;
+
+      // Read the offset just after the transition using the same
+      // formatter the row already uses, so the tooltip's number always
+      // matches what the diff badge will actually show once it happens.
+      const afterTransition = new Date(transitionDate.getTime() + 60000);
+      const newOffsetLabel = getOffsetFromHomeBase(afterTransition, member.timezone).replace(/ tomorrow$/, '');
+      const dateLabel = formatDateShort(transitionDate);
+      const whenLabel = dateLabel === 'Tomorrow' ? 'tomorrow' : `on ${dateLabel}`;
+
+      return { message: `Offset changes to ${newOffsetLabel} ${whenLabel}` };
+    } catch (e) {
+      return null;
     }
   }
 

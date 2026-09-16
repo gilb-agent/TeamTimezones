@@ -547,7 +547,10 @@ body {
   margin-top: -1px; /* Remove gap between home base and custom controls */
   padding: 8px 14px; /* Match row padding (10px 14px) but slightly less vertical for compactness */
   padding-left: 14px; /* M3: No extra padding for accent bar */
-  background: var(--md-sys-color-surface); /* Use surface color for dark mode support */
+  /* Match Home Base's own background (not the page background) so the
+     two visually fuse into one card instead of showing a seam where a
+     lighter surface-variant card sits on a darker plain-surface drawer. */
+  background: var(--md-sys-color-surface-variant);
   border-radius: 0 0 var(--md-sys-shape-corner-medium) var(--md-sys-shape-corner-medium);
   border: none; /* M3: No borders */
   border-top: none;
@@ -694,72 +697,47 @@ body {
   position: relative;
 }
 
-/* Visual time track container */
+/* Track container: the business-hours color band behind the native range
+   input, plus small hour labels underneath. One shared component for
+   both the Home Base slider and every city's own slider. */
 .slider-track-container {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.slider-track-row {
   position: relative;
-  height: 44px;
   display: flex;
   align-items: center;
 }
 
-/* Time markers on track */
-.time-markers {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 20px;
-  display: flex;
-  justify-content: space-between;
-  pointer-events: none;
-}
-
-.time-marker {
-  font-size: 9px;
-  color: var(--md-sys-color-on-surface-variant);
-  opacity: 0.5;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.time-marker.major {
-  opacity: 0.7;
-  font-weight: 600;
-}
-
-/* Visual track background with day/night gradient */
+/* Night/work-hours/off-hours band across the 24h track, in the same
+   colors every row's left border already uses. Its gradient is built in
+   JS per home base / per city, since work hours are configurable per
+   person — this rule only positions and sizes it. */
 .slider-track-bg {
   position: absolute;
-  bottom: 10px;
+  top: 50%;
   left: 0;
   right: 0;
   height: 6px;
   border-radius: 3px;
-  background: linear-gradient(
-    to right,
-    rgba(142, 111, 163, 0.2) 0%,      /* Night (midnight) */
-    rgba(142, 111, 163, 0.1) 25%,     /* Early morning */
-    rgba(92, 184, 92, 0.15) 37.5%,    /* Work starts (9am) */
-    rgba(92, 184, 92, 0.2) 50%,       /* Noon */
-    rgba(92, 184, 92, 0.15) 75%,      /* Work ends (6pm) */
-    rgba(255, 167, 38, 0.15) 87.5%,   /* Evening */
-    rgba(142, 111, 163, 0.2) 100%     /* Night (midnight) */
-  );
+  opacity: 0.4;
+  transform: translateY(-50%);
   pointer-events: none;
-  opacity: 0.6;
 }
 
-/* Work hours highlight on track */
-.slider-track-bg::before {
-  content: '';
-  position: absolute;
-  left: 37.5%;  /* 9am */
-  width: 37.5%; /* 9am to 6pm */
-  height: 100%;
-  background: var(--work-hours);
-  opacity: 0.08;
-  border-radius: 3px;
+.slider-track-labels {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 2px;
+  font-family: var(--md-sys-typescale-body-small-font);
+  font-size: 9px;
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: 0.5;
 }
 
 .slider-btn {
@@ -811,9 +789,12 @@ body {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--md-sys-color-primary); /* Primary color only */
+  background: var(--md-sys-color-primary);
   cursor: pointer;
-  border: none; /* Remove border - M3 style */
+  /* A slim border in the surrounding surface color keeps the thumb
+     legible sitting on top of the colored track band instead of just
+     blending into whichever segment it's over. */
+  border: 2px solid var(--md-sys-color-surface-variant);
   box-shadow: none; /* M3 elevation 0 */
   /* CRITICAL: Negative margin to center on track */
   margin-top: -8px;
@@ -832,8 +813,7 @@ body {
 .time-slider::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 2px;
-  background: var(--md-sys-color-outline-variant);
-  opacity: 0.38; /* M3 neutral track - reduced opacity */
+  background: transparent; /* The colored .slider-track-bg shows through instead */
 }
 
 /* Firefox */
@@ -841,9 +821,9 @@ body {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--md-sys-color-primary); /* Primary color only */
+  background: var(--md-sys-color-primary);
   cursor: pointer;
-  border: none; /* Remove border - M3 style */
+  border: 2px solid var(--md-sys-color-surface-variant);
   box-shadow: none; /* M3 elevation 0 */
   transition: transform 200ms cubic-bezier(0.2, 0, 0, 1);
 }
@@ -859,8 +839,7 @@ body {
 .time-slider::-moz-range-track {
   height: 4px;
   border-radius: 2px;
-  background: var(--md-sys-color-outline-variant);
-  opacity: 0.38; /* M3 neutral track - reduced opacity */
+  background: transparent; /* The colored .slider-track-bg shows through instead */
 }
 
 /* FIX #3: Compact time display - time and date picker on same line */
@@ -904,17 +883,24 @@ body {
 }
 
 .slider-date-picker {
+  /* Invisible — exists only so .showPicker()/.value have something to
+     act on, sized to match the label for sane popup anchoring. It used
+     to also sit on top intercepting clicks (relying on the browser's
+     own click-to-open heuristic for a stretched, invisible native date
+     input), which is exactly why "Today" felt inconsistently clickable:
+     whether it opened depended on hitting whatever pixel the hidden
+     calendar-icon hit-target happened to land on. pointer-events: none
+     takes it out of the click path entirely — the visible label below
+     is now the only click target, and its own handler calls
+     showPicker() deterministically every time. */
   position: absolute;
   opacity: 0;
+  pointer-events: none;
   width: 100%;
   height: 100%;
-  cursor: pointer;
-  /* Position to cover the label */
   top: 0;
   right: 0;
   left: 0;
-  /* FIX #6: Ensure input covers entire label area */
-  z-index: 1;
 }
 
 /* FIX #6: Make the label look fully clickable */
@@ -941,7 +927,9 @@ body {
   background: var(--md-sys-color-surface); /* Use surface color for dark mode support */
   border-radius: 0 0 var(--md-sys-shape-corner-medium) var(--md-sys-shape-corner-medium);
   border: none; /* M3: No borders */
-  border-top: 1px solid var(--md-sys-color-outline-variant); /* Subtle top divider to show it's a sub-section */
+  /* No top divider: same fused-card treatment as Home Base's .custom —
+     the row and this drawer share one continuous shape, no seam line. */
+  border-top: none;
   box-shadow: none; /* M3 elevation 0 */
   position: relative;
   z-index: 0; /* Appear behind the row */
@@ -1142,6 +1130,60 @@ body {
 
 .group-switcher.hidden {
   display: none;
+}
+
+/* Quick team filter: hidden until "/" is pressed, so it doesn't cost
+   anyone visual space or attention until they actually want it. */
+.team-filter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin: 0 0 8px;
+  background: var(--md-sys-color-surface-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
+  flex-shrink: 0;
+}
+
+.team-filter-icon {
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.team-filter-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
+  font-family: var(--md-sys-typescale-body-medium-font);
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface);
+}
+
+.team-filter-input::placeholder {
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: 0.6;
+}
+
+.team-filter-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: 0.6;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.team-filter-clear:hover {
+  opacity: 1;
 }
 
 .group-switcher .group-chip {
@@ -1471,7 +1513,55 @@ body {
   text-overflow: ellipsis;
   display: flex;
   align-items: center;
-  gap: 6px;
+  /* No gap here: the pin button collapses to zero width when it isn't
+     shown (see .pin-btn), and a flex gap would still reserve its own
+     space either side of that zero-width button — pushing the city name
+     name off the row's left edge on every row, pinned or not. Each
+     sibling manages its own spacing instead. */
+}
+
+/* Pin to top: zero footprint on a plain, unpinned row — width and margin
+   both collapse to 0, so the city name sits flush against the row's left
+   edge exactly like every other row, not just visually hidden but out of
+   the layout entirely. It only claims space on hover, or once a row is
+   actually pinned (the state itself always stays visible). */
+.pin-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 0;
+  height: 16px;
+  margin-right: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: 0;
+  overflow: hidden;
+  cursor: pointer;
+  transition: width 150ms cubic-bezier(0.2, 0, 0, 1), margin-right 150ms cubic-bezier(0.2, 0, 0, 1), opacity 150ms cubic-bezier(0.2, 0, 0, 1), color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.row:hover .pin-btn,
+.pin-btn:focus-visible,
+.pin-btn.pinned {
+  width: 14px;
+  margin-right: 5px;
+}
+
+.row:hover .pin-btn,
+.pin-btn:focus-visible {
+  opacity: 0.45;
+}
+
+.pin-btn:hover {
+  opacity: 0.8;
+}
+
+.pin-btn.pinned {
+  opacity: 1;
+  color: var(--md-sys-color-primary);
 }
 
 .holiday-indicator {
@@ -1483,6 +1573,13 @@ body {
   line-height: 1;
   pointer-events: auto;
   position: relative;
+}
+
+/* .name (team rows) no longer sets a flex gap — see .pin-btn — so this
+   pairing needs its own spacing. .home-city still has its own gap and is
+   untouched. */
+.name .holiday-indicator {
+  margin-left: 6px;
 }
 
 .holiday-indicator:hover {
@@ -1512,6 +1609,50 @@ body {
 
 .row:hover .holiday-tooltip,
 .home-base:hover .holiday-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* DST heads-up: a quiet indicator next to the diff badge for a member whose
+   offset from home base is about to change (a DST transition on either
+   side, within the next few weeks). Same hover-tooltip pattern as the
+   holiday indicator, mirrored onto the right side of the row. */
+.dst-indicator {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--md-sys-color-tertiary);
+  cursor: default;
+  line-height: 1;
+}
+
+.dst-indicator:hover {
+  opacity: 0.8;
+}
+
+.dst-tooltip {
+  position: absolute;
+  top: -32px;
+  right: 14px;
+  background: var(--md-sys-color-inverse-surface);
+  color: var(--md-sys-color-inverse-on-surface);
+  padding: 6px 10px;
+  border-radius: var(--md-sys-shape-corner-small);
+  font-family: var(--md-sys-typescale-body-small-font);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 14px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 100ms cubic-bezier(0.2, 0, 0, 1), visibility 100ms cubic-bezier(0.2, 0, 0, 1);
+  z-index: 1000;
+  box-shadow: var(--md-sys-elevation-level2);
+}
+
+.row:hover .dst-tooltip {
   opacity: 1;
   visibility: visible;
 }
