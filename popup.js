@@ -490,6 +490,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const settingsBtn = document.getElementById('settingsBtn');
   const homeBaseEl = document.getElementById('homeBase');
   const homeTimeEl = document.getElementById('homeTime');
+  const homeUtcEl = document.getElementById('homeUtc');
   const statusSummaryRowEl = document.getElementById('statusSummaryRow');
   const statusSummaryEl = document.getElementById('statusSummary');
   const copyMessageBtnEl = document.getElementById('copyMessageBtn');
@@ -533,6 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentShareMessage = ''; // Text the copy-message button will put on the clipboard
   let copyFeedbackTimeout = null;
   let calendarProvider = null; // null = ask which calendar; otherwise 'google' or 'outlook'
+  let showUtc = false; // Off by default; enabled in Settings > Home Base
   let scheduleSignatureEnabled = true; // Credit line in the invite description; opt-out in Settings
   let currentScheduleDate = null; // The moment currently shown, used as the event start
   let currentScheduleLines = []; // "8:02 AM in New York" style lines, one per line, for the event description
@@ -610,7 +612,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Load data with error handling
-  chrome.storage.sync.get(['team', 'homeBase', 'quickTimes', 'isDarkMode', 'use24HourFormat', 'calendarProvider', 'scheduleSignatureEnabled', 'groups'], (result) => {
+  chrome.storage.sync.get(['team', 'homeBase', 'quickTimes', 'isDarkMode', 'use24HourFormat', 'calendarProvider', 'scheduleSignatureEnabled', 'groups', 'showUtc'], (result) => {
     // Check for Chrome runtime errors
     if (chrome.runtime.lastError) {
       console.error('Storage error:', chrome.runtime.lastError);
@@ -698,6 +700,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (result.groups && Array.isArray(result.groups)) {
       groups = result.groups;
     }
+
+    // Off by default — only on once someone opts in from Settings
+    showUtc = result.showUtc === true;
 
     // Initialize toggles
     initializeToggles(result);
@@ -831,6 +836,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (changes.scheduleSignatureEnabled !== undefined) {
       scheduleSignatureEnabled = changes.scheduleSignatureEnabled.newValue !== false;
+    }
+    if (changes.showUtc !== undefined) {
+      showUtc = changes.showUtc.newValue === true;
+      render();
     }
     if (changes.groups) {
       groups = changes.groups.newValue || [];
@@ -1626,6 +1635,15 @@ document.addEventListener('DOMContentLoaded', () => {
       homeBaseEl.classList.remove('hidden');
       const homeTime = formatTime(baseDate, homeBase.timezone);
       homeTimeEl.textContent = homeTime;
+      if (homeUtcEl) {
+        // Off by default (opt in from Settings > Home Base). When on: a
+        // single, always-available anchor — whatever timezone anyone else
+        // is in, "home time is X UTC" is one conversion away from their
+        // own local time, no need to know home base's timezone.
+        homeUtcEl.textContent = (showUtc && homeBase.timezone !== 'UTC')
+          ? `${formatTime(baseDate, 'UTC')} UTC`
+          : '';
+      }
       if (sliderTrackBg) {
         const { start: homeWorkStart, end: homeWorkEnd } = getEffectiveWorkHours(homeBase);
         sliderTrackBg.style.background = buildTrackGradient(homeWorkStart, homeWorkEnd);

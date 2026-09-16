@@ -12,7 +12,7 @@ Every timezone extension can show you an offset. Team Timezones is built for the
 
 - **Business hours at a glance** — one line ("Sarah is in business hours") instead of checking each person's clock separately
 - **Holiday flags** — a teammate's row shows when their country's on a public holiday
-- **Suggest a time** — pick a few people, it finds the best overlapping slot instead of just showing "now"
+- **Groups** — save named subsets of your team (e.g. "APAC", "Leads") and switch the whole popup to that view with one tap
 - **Schedule in one click** — turns that slot into a pre-filled Google Calendar or Outlook draft, with everyone's local time already written into the invite body
 - **Copy as a message** — "It's 9am for me, 6pm in Tokyo, 2pm in London," ready to paste into Slack
 - **No sign-in, no accounts, no calendar access.** Everything lives in `chrome.storage` — `storage` is the only permission this extension requests.

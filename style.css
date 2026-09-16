@@ -1372,6 +1372,19 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* A single UTC anchor, styled like a team row's offset line — quiet,
+   secondary, and empty (collapses to nothing) when home base is UTC. */
+.home-utc {
+  font-family: var(--md-sys-typescale-body-small-font);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+  letter-spacing: 0.4px;
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+
 /* List - M3 List */
 .list {
   display: flex;

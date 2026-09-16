@@ -56,6 +56,7 @@ const addBtn = document.getElementById('addBtn');
 const teamList = document.getElementById('teamList');
 const calendarProviderSelect = document.getElementById('calendarProviderSelect');
 const scheduleSignatureToggle = document.getElementById('scheduleSignatureToggle');
+const showUtcToggle = document.getElementById('showUtcToggle');
 const newGroupNameInput = document.getElementById('newGroupName');
 const addGroupBtn = document.getElementById('addGroupBtn');
 const newGroupChipsEl = document.getElementById('newGroupChips');
@@ -95,7 +96,7 @@ function init() {
   }
   
   // Load saved data with error handling
-  chrome.storage.sync.get(['team', 'homeBase', 'isDarkMode', 'calendarProvider', 'scheduleSignatureEnabled', 'groups'], (result) => {
+  chrome.storage.sync.get(['team', 'homeBase', 'isDarkMode', 'calendarProvider', 'scheduleSignatureEnabled', 'groups', 'showUtc'], (result) => {
     // Check for Chrome runtime errors
     if (chrome.runtime.lastError) {
       console.error('Storage error:', chrome.runtime.lastError);
@@ -200,6 +201,11 @@ function init() {
       scheduleSignatureToggle.checked = result.scheduleSignatureEnabled !== false;
     }
 
+    // Default off — only on once someone opts in
+    if (showUtcToggle) {
+      showUtcToggle.checked = result.showUtc === true;
+    }
+
     // Listen for dark mode changes from popup
     chrome.storage.onChanged.addListener((changes) => {
       if (changes.isDarkMode !== undefined) {
@@ -258,6 +264,19 @@ function init() {
       chrome.storage.sync.set({ scheduleSignatureEnabled: scheduleSignatureToggle.checked }, () => {
         if (chrome.runtime.lastError) {
           console.error('Failed to save schedule signature preference:', chrome.runtime.lastError);
+          showToast('Failed to save. Please try again.');
+          return;
+        }
+        showToast('Saved');
+      });
+    });
+  }
+
+  if (showUtcToggle) {
+    showUtcToggle.addEventListener('change', () => {
+      chrome.storage.sync.set({ showUtc: showUtcToggle.checked }, () => {
+        if (chrome.runtime.lastError) {
+          console.error('Failed to save UTC display preference:', chrome.runtime.lastError);
           showToast('Failed to save. Please try again.');
           return;
         }
